@@ -182,6 +182,75 @@ def get_available_genes(expr_data: Dict) -> List[str]:
     return sorted(expr_data['expr_long']['gene'].unique())
 
 
+def plot_multiple_genes(genes: List[str], expr_data: Dict) -> Optional[plt.Figure]:
+    """
+    Create facetted boxplots (one facet per gene) for multiple genes using matplotlib.
+
+    Parameters
+    ----------
+    genes : list[str]
+    expr_data : dict
+        Dictionary from load_expression_data()
+
+    Returns
+    -------
+    matplotlib.figure.Figure or None
+    """
+    # Filter long data for requested genes
+    df = expr_data['expr_long']
+    sel = df[df['gene'].isin(genes)].copy()
+
+    if sel.empty:
+        print(f"Warning: None of genes {genes} found in dataset")
+        return None
+
+    # Number of facets
+    n = len(genes)
+    ncols = min(3, n)
+    nrows = (n + ncols - 1) // ncols
+
+    fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(5 * ncols, 4 * nrows), squeeze=False)
+    axes = axes.flatten()
+
+    colors = {
+        'Normal': '#66C2A5',
+        'Primary Tumor': '#FC8D62',
+        'Metastatic': '#8DA0CB'
+    }
+
+    for i, gene in enumerate(genes):
+        ax = axes[i]
+        gene_df = sel[sel['gene'] == gene]
+
+        # Prepare data per condition
+        conditions = ['Normal', 'Primary Tumor', 'Metastatic']
+        data_by_condition = [
+            gene_df[gene_df['condition'] == cond]['expression'].values
+            for cond in conditions
+        ]
+
+        bp = ax.boxplot(data_by_condition, labels=conditions, patch_artist=True, showfliers=False)
+        for patch, cond in zip(bp['boxes'], conditions):
+            patch.set_facecolor(colors[cond])
+            patch.set_alpha(0.7)
+
+        for j, cond in enumerate(conditions, 1):
+            cond_data = gene_df[gene_df['condition'] == cond]['expression']
+            x = [j] * len(cond_data)
+            ax.scatter(x, cond_data, alpha=0.5, s=20, color=colors[cond], zorder=3)
+
+        ax.set_title(gene, fontsize=12)
+        ax.set_xlabel('')
+        ax.set_ylabel('Expression')
+
+    # Remove extra axes
+    for k in range(i + 1, len(axes)):
+        fig.delaxes(axes[k])
+
+    plt.tight_layout()
+    return fig
+
+
 def search_genes(pattern: str, expr_data: Dict, max_results: int = 10) -> List[str]:
     """
     Search for genes matching a pattern.
