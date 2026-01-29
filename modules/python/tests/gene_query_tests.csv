@@ -70,6 +70,12 @@ Explain ETV6 involvement in leukemia,info,ETV6
 What are NTRK1 fusion driven tumors,info,NTRK1
 What are NTRK2 fusion driven tumors,info,NTRK2
 What are NTRK3 fusion driven tumors,info,NTRK3
+Explain TP53 and PDCD1 roles together,info,TP53;PDCD1
+Compare KRAS and EGFR signaling roles,info,KRAS;EGFR
+How do BRCA1 and BRCA2 collaborate in repair,info,BRCA1;BRCA2
+"Summarize TP53, KRAS, and EGFR importance in cancer",info,TP53;KRAS;EGFR
+Describe ATM and ATR functions in DNA damage response,info,ATM;ATR
+Explain MYC and CCND1 in cell cycle progression,info,MYC;CCND1
 Plot TP53 expression across samples,plot,TP53
 Show a line plot of KRAS expression,plot,KRAS
 Visualize EGFR expression levels in a heatmap,plot,EGFR

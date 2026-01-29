@@ -20,10 +20,12 @@ from datetime import datetime
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from utils.python.ollama_utils import call_ollama, ask_llm_to_classify, ask_llm_to_extract
+from utils.python.llm_utils import extract_gene_name_with_details
 import pandas as pd
 import requests
+import re
 
-DEBUG = False
+DEBUG = True
 TEST_DATA_PATH = os.path.join(os.path.dirname(__file__), "tests", "gene_query_tests.csv")
 TEST_OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "tests", "results")
 
@@ -153,66 +155,71 @@ def fetch_from_mygene_api(gene_name: str) -> dict:
 # RAG: Generate Natural Language Answer
 # ============================================
 
-def generate_gene_explanation(gene_name: str, gene_info: dict, user_question: str) -> str:
+def generate_gene_explanations(gene_names: list[str], gene_infos: list[dict], user_question: str) -> str:
     """
-    Use LLM to generate natural language explanation from retrieved info.
-
-    This is the "Generation" part of RAG (Retrieval-Augmented Generation).
+    Use LLM to generate natural language explanations for one or more genes in a single call.
 
     Args:
-        gene_name: Gene symbol
-        gene_info: Retrieved gene information dict
+        gene_names: List of gene symbols (uppercase)
+        gene_infos: List of gene info dicts from retrieval, same order as gene_names
         user_question: Original user question
 
     Returns:
-        str: Natural language explanation
-
-    Example:
-        >>> explanation = generate_gene_explanation("TP53", tp53_info, "What does TP53 do?")
-        >>> print(explanation)
-        "TP53 is a crucial tumor suppressor gene that acts as the 'guardian of the genome'..."
+        str: Joined paragraphs, one per gene
     """
+
+    if not gene_names or not gene_infos or len(gene_names) != len(gene_infos):
+        return "I couldn't assemble gene information to answer that question."
+
+    blocks = []
+    for name, info in zip(gene_names, gene_infos):
+        if info.get("found"):
+            blocks.append(
+                f"Gene: {name}\n"
+                f"Full Name: {info.get('full_name', 'N/A')}\n"
+                f"Location: {info.get('chromosome', 'N/A')}\n"
+                f"Function: {info.get('function', 'N/A')}\n"
+                f"Description: {info.get('description', '')}\n"
+            )
+        else:
+            blocks.append(
+                f"Gene: {name}\n"
+                f"Description: Not found in knowledge base; provide a concise general explanation if possible.\n"
+            )
     if DEBUG:
-        print(not gene_info.get('found'))
-    if not gene_info.get('found'):
-        # Gene not in knowledge base
-        prompt = f"""
-The gene {gene_name} is not in our knowledge base.
-
-Based on your general knowledge, provide a brief explanation of what this gene might do,
-or explain that detailed information is not available.
-
-User's question: {user_question}
-
-Answer:
-"""
-        answer = call_ollama(prompt, temperature=0.5)
-        return answer if answer else f"Sorry, I don't have information about {gene_name}."
-
-    # Gene found - inject retrieved info into prompt
-    context = f"""
-Gene: {gene_info['gene']}
-Full Name: {gene_info.get('full_name', 'N/A')}
-Location: {gene_info.get('chromosome', 'N/A')}
-Function: {gene_info.get('function', 'N/A')}
-Description: {gene_info.get('description', '')}
-"""
+        print("---")
+        print("Context blocks for LLM:")
+        for block in blocks:
+            print(block)
+            print("---")
+    context = "\n---\n".join(blocks)
 
     prompt = f"""
 You are a helpful bioinformatics assistant. Answer the user's question about this gene
 using the information provided. Explain in clear, accessible language suitable for researchers.
 
-Gene Information:
+Context:
 {context}
 
 User's question: {user_question}
 
-Your answer (2-3 sentences):
+Output format (one paragraph per gene):
+GENE_1: <2-3 sentence explanation>
+...
+GENE_N: <2-3 sentence explanation>
 """
 
     answer = call_ollama(prompt, temperature=0.4)
 
-    return answer if answer else gene_info.get('description', 'No information available.')
+    # Fallback: if the LLM returns nothing, stitch descriptions to avoid empty output
+    if not answer:
+        stitched = []
+        for name, info in zip(gene_names, gene_infos):
+            desc = info.get('description') or 'No information available.'
+            stitched.append(f"{name}: {desc}")
+        return "\n\n".join(stitched)
+
+    return answer.strip()
 
 
 # ============================================
@@ -236,49 +243,59 @@ def answer_gene_question(user_input: str) -> str:
         "TP53 is a tumor suppressor gene..."
     """
 
-    # Step 1: Extract gene name from question
-    gene_name = extract_gene_from_question(user_input)
+    genes = extract_genes_from_question(user_input)
 
-    if gene_name is None:
-        return "I couldn't identify which gene you're asking about. Please mention a specific gene name."
+    if not genes:
+        return "I couldn't identify which gene you're asking about. Please mention one or more specific gene names."
 
-    # Step 2: Retrieve gene information (RAG retrieval step)
-    gene_info = fetch_from_mygene_api(gene_name)
-    if DEBUG:
-        print(gene_info)
+    gene_infos = []
+    for gene_name in genes:
+        gene_info = fetch_from_mygene_api(gene_name)
+        if DEBUG:
+            print(gene_info)
+        gene_infos.append(gene_info)
 
-    # Step 3: Generate answer using LLM (RAG generation step)
-    answer = generate_gene_explanation(gene_name, gene_info, user_input)
+    return generate_gene_explanations(genes, gene_infos, user_input)
 
-    return answer
+
+def extract_genes_from_question(user_input: str) -> list[str]:
+    """
+    Extract one or more gene names from a question.
+
+    Returns a list of uppercase gene symbols (may be empty).
+    """
+
+    details = extract_gene_name_with_details(user_input)
+    genes = []
+    if details and details.get("success"):
+        genes = [g.upper().strip() for g in details.get("gene_names", []) if g]
+
+    # Fallback to single-gene extraction if multi-gene parsing failed
+    if not genes:
+        gene = ask_llm_to_extract(
+            user_input,
+            what_to_extract="gene name",
+            example="TP53"
+        )
+        if gene and gene != "NONE":
+            genes = [gene.upper().strip()]
+
+    # Deduplicate while preserving order
+    seen = set()
+    deduped = []
+    for g in genes:
+        if g and g not in seen:
+            deduped.append(g)
+            seen.add(g)
+
+    return deduped
 
 
 def extract_gene_from_question(user_input: str) -> str:
-    """
-    Extract gene name from a question.
+    """Backward-compatible helper returning only the first gene (if any)."""
 
-    Args:
-        user_input: User's question
-
-    Returns:
-        str: Gene name (uppercase) or None
-
-    Example:
-        >>> extract_gene_from_question("What does TP53 do?")
-        "TP53"
-    """
-
-    # Use the utility function from ollama_utils
-    gene = ask_llm_to_extract(
-        user_input,
-        what_to_extract="gene name",
-        example="TP53"
-    )
-
-    if gene and gene != "NONE":
-        return gene.upper().strip()
-
-    return None
+    genes = extract_genes_from_question(user_input)
+    return genes[0] if genes else None
 
 
 # ============================================
@@ -363,10 +380,12 @@ def run_batch_tests(
     for idx, row in df.iterrows():
         user_input = row["user_input"]
         expected_intent = str(row["expected_intent"]).strip().lower()
-        expected_gene = str(row["expected_gene"]).strip().upper()
+        expected_gene_cell = str(row["expected_gene"]).strip()
+        expected_genes = [g.strip().upper() for g in re.split(r"[;,]", expected_gene_cell) if g.strip()] if expected_gene_cell else []
 
         predicted_intent = "info" if is_gene_question(user_input) else "plot"
-        predicted_gene = extract_gene_from_question(user_input) or ""
+        predicted_genes = extract_genes_from_question(user_input)
+        predicted_gene = predicted_genes[0] if predicted_genes else ""
 
         answer = ""
         judge_verdict = "skipped"
@@ -388,7 +407,7 @@ def run_batch_tests(
                 )
 
         intent_ok = predicted_intent == expected_intent
-        gene_ok = predicted_gene == expected_gene
+        gene_ok = all(g in predicted_genes for g in expected_genes) if expected_genes else False
 
         intent_correct += int(intent_ok)
         gene_correct += int(gene_ok)
@@ -400,8 +419,10 @@ def run_batch_tests(
                     "user_input": user_input,
                     "expected_intent": expected_intent,
                     "predicted_intent": predicted_intent,
-                    "expected_gene": expected_gene,
+                    "expected_gene": expected_gene_cell,
+                    "expected_genes": expected_genes,
                     "predicted_gene": predicted_gene,
+                    "predicted_genes": predicted_genes,
                     "answer": answer,
                     "judge_verdict": judge_verdict,
                     "judge_reason": judge_reason,
@@ -413,8 +434,10 @@ def run_batch_tests(
                 "user_input": user_input,
                 "expected_intent": expected_intent,
                 "predicted_intent": predicted_intent,
-                "expected_gene": expected_gene,
+                "expected_gene": expected_gene_cell,
+                "expected_genes": expected_genes,
                 "predicted_gene": predicted_gene,
+                "predicted_genes": predicted_genes,
                 "answer": answer,
                 "judge_verdict": judge_verdict,
                 "judge_reason": judge_reason,
