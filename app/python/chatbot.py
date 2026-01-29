@@ -29,7 +29,7 @@ SAFE_MODE = False
 
 if SAFE_MODE:
     # Emergency fallback - disable all experimental features
-    ENABLE_MULTI_GENE = False
+    ENABLE_MULTI_GENE = True
     ENABLE_FILTERS = False
     ENABLE_CONVERSATION = False
     ENABLE_STATS = False
@@ -418,9 +418,10 @@ if user_input:
     with st.spinner("Processing your question..."):
         llm_details = extract_gene_name_with_details(resolved_input)
 
-    gene_name = llm_details['gene_name']
+    gene_names = llm_details.get('gene_names', [])
+    gene_name = llm_details['gene_name']  # First gene for backwards compatibility
 
-    if gene_name is None:
+    if not gene_names or gene_name is None:
         st.session_state.messages.append({
             "type": "error",
             "text": "Sorry, I couldn't extract a gene name from your question. Please try again with a specific gene name (e.g., 'Show me TP53')."
@@ -432,13 +433,33 @@ if user_input:
 
     available_genes = get_available_genes(expr_data)
 
-    if gene_name not in available_genes:
+    # Check which genes are valid
+    valid_genes = [g for g in gene_names if g in available_genes]
+    invalid_genes = [g for g in gene_names if g not in available_genes]
+
+    if not valid_genes:
         st.session_state.messages.append({
             "type": "error",
-            "text": f"Gene '{gene_name}' not found in dataset. Please check the spelling or try a different gene."
+            "text": f"Gene(s) '{', '.join(gene_names)}' not found in dataset. Please check the spelling or try a different gene."
         })
         st.session_state.last_llm_details = llm_details
         st.rerun()
+
+    # If multiple genes detected, notify user
+    if len(gene_names) > 1:
+        if invalid_genes:
+            st.session_state.messages.append({
+                "type": "bot",
+                "text": f"Found {len(gene_names)} genes: {', '.join(gene_names)}. Note: {', '.join(invalid_genes)} not in dataset. Plotting {valid_genes[0]}."
+            })
+        else:
+            st.session_state.messages.append({
+                "type": "bot",
+                "text": f"Found {len(gene_names)} genes: {', '.join(gene_names)}. Currently plotting {valid_genes[0]} (multi-gene visualization coming soon!)."
+            })
+
+    # Use first valid gene for now
+    gene_name = valid_genes[0]
 
     # --- STEP 4: Apply filters (Qing's Filter Feature) ---
 
@@ -556,9 +577,15 @@ if st.session_state.last_llm_details is not None:
         st.markdown("#### 2️⃣ LLM Response")
         st.code(llm_details['llm_response'], language="text")
 
-        # 3. Extracted gene name
-        st.markdown("#### 3️⃣ Extracted Gene Name")
-        if llm_details['gene_name']:
+        # 3. Extracted gene name(s)
+        st.markdown("#### 3️⃣ Extracted Gene Name(s)")
+        gene_names = llm_details.get('gene_names', [])
+        if gene_names:
+            if len(gene_names) == 1:
+                st.success(f"✓ Successfully extracted: **{gene_names[0]}**")
+            else:
+                st.success(f"✓ Successfully extracted {len(gene_names)} genes: **{', '.join(gene_names)}**")
+        elif llm_details['gene_name']:
             st.success(f"✓ Successfully extracted: **{llm_details['gene_name']}**")
         else:
             st.error("✗ Failed to extract gene name")
