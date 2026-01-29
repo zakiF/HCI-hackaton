@@ -148,43 +148,87 @@ detect_plot_type <- function(user_input, num_genes = 1) {
 # Plotting Functions (Hardcoded)
 # ============================================
 
-#' Create Boxplot for Single Gene
+#' Create Boxplot (Single or Multiple Genes)
 #'
-#' @param gene_name Character string, gene to plot
-#' @param expr_data Data frame with expression values (genes × samples)
-#' @param metadata Data frame with sample conditions
+#' Accepts either a single gene name or a vector of gene names and returns a
+#' ggplot object. When multiple genes are provided, the function produces a
+#' facetted boxplot (one facet per gene) so multiple genes can be compared
+#' across the same grouping variable.
+#'
+#' @param gene_names Character vector of gene names (length 1 or more)
+#' @param expr_matrix Data frame with expression values (genes × samples)
+#' @param metadata Data frame with sample annotations (must contain a `Run` column)
+#' @param group_col Character, column in `metadata` to use for grouping (default: "group")
 #' @return ggplot object
-plot_gene_boxplot <- function(gene_name, expr_data, metadata) {
+plot_gene_boxplot <- function(gene_names, expr_matrix, metadata,
+                              group_col = "group") {
 
-  # Get expression for this gene
-  gene_expr <- as.numeric(expr_data[gene_name, ])
+  library(tidyr)
+  library(dplyr)
 
-  # Combine with metadata
-  plot_data <- data.frame(
-    sample = colnames(expr_data),
-    expression = gene_expr,
-    condition = metadata$condition
-  )
+  # Subset expression matrix and convert to long format
+  plot_data <- expr_matrix[gene_names, , drop = FALSE] |>
+    as.data.frame() |>
+    tibble::rownames_to_column("gene") |>
+    pivot_longer(
+      cols = -gene,
+      names_to = "sample",
+      values_to = "expression"
+    ) |>
+    left_join(
+      metadata,
+      by = c("sample" = "Run")
+    )
 
-  # Create ggplot
-  p <- ggplot(plot_data, aes(x = condition, y = expression, fill = condition)) +
-    geom_boxplot(alpha = 0.7, outlier.shape = NA) +
-    geom_jitter(width = 0.2, alpha = 0.5, size = 2) +
-    labs(
-      title = paste0(gene_name, " Expression Across Conditions"),
-      x = "Condition",
-      y = "Expression (TPM)",
-      fill = "Condition"
-    ) +
+  # Build plot (facetted if multiple genes)
+  p <- ggplot(plot_data,
+             aes(x = .data[[group_col]],
+                 y = expression,
+                 fill = .data[[group_col]])) +
+    geom_boxplot(outlier.shape = NA, alpha = 0.7) +
+    geom_jitter(width = 0.2, alpha = 0.5, size = 1.5) +
+    facet_wrap(~ gene, scales = "free_y") +
     theme_minimal() +
-    theme(
-      plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
-      axis.title = element_text(size = 12),
-      legend.position = "right"
-    ) +
-    scale_fill_brewer(palette = "Set2")
+    scale_fill_brewer(palette = "Set2") +
+    labs(
+      title = "Gene Expression Across Conditions",
+      x = group_col,
+      y = "Expression"
+    )
 
   return(p)
+}
+
+
+#' Save a plot of one or more genes to PNG (convenience wrapper for Python)
+#'
+#' This wrapper makes it easy to call from Python (via rpy2). It expects
+#' `gene_names` to be a character vector, `expr_matrix` to be genes × samples,
+#' and `metadata` to contain a `Run` column matching the sample names.
+#'
+#' @param gene_names Character vector of gene names
+#' @param expr_matrix Data frame
+#' @param metadata Data frame
+#' @param file_path Character, full path to save PNG
+#' @param width Numeric, width in inches
+#' @param height Numeric, height in inches
+#' @param dpi Numeric, resolution
+#' @param group_col Character, grouping column in metadata
+#' @return Character path to saved file (invisibly)
+plot_genes_save_png <- function(gene_names, expr_matrix, metadata, file_path,
+                                width = 10, height = 6, dpi = 150,
+                                group_col = "group") {
+
+  # Create plot using the multi-gene boxplot function
+  p <- plot_gene_boxplot(gene_names, expr_matrix, metadata, group_col)
+
+  # Ensure directory exists
+  dir.create(dirname(file_path), recursive = TRUE, showWarnings = FALSE)
+
+  # Save as PNG
+  ggsave(filename = file_path, plot = p, width = width, height = height, dpi = dpi)
+
+  return(invisible(file_path))
 }
 
 

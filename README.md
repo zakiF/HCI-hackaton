@@ -85,6 +85,10 @@ All analyses are executed using established bioinformatics tools, with the LLM a
 2. **Pull a model:** `ollama pull llama3.2`
 3. **Start Ollama:** `ollama serve` (keep running)
 
+4. **(Optional) R bridge:** To enable calling R plotting from Python install `rpy2` (`pip install rpy2`) and ensure the following R packages are available: `ggplot2`, `tidyr`, `dplyr`, `jsonlite`.
+
+Alternatively, the app can call R via `Rscript` (no `rpy2` required). Ensure `Rscript` is on your PATH and install R packages with `source("environment/requirements.R")`.
+
 ### Run the Chatbot
 
 **Python (Streamlit):**

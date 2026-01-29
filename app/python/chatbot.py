@@ -49,13 +49,9 @@ else:
 
 # Multi-gene visualization (Zaki + Udhayakumar)
 if ENABLE_MULTI_GENE:
-    try:
-        # TODO: Uncomment when R bridge is ready
-        # from modules.python.r_bridge import plot_multiple_genes
-        print("✓ Multi-gene feature loaded")
-    except Exception as e:
-        print(f"✗ Multi-gene feature disabled: {e}")
-        ENABLE_MULTI_GENE = False
+    # We enable multi-gene plotting even if rpy2 isn't installed. The bridge
+    # will fall back to calling Rscript if needed, so users do not need rpy2.
+    print("✓ Multi-gene feature enabled (uses Rscript fallback if rpy2 missing)")
 
 # Filter extraction (Qing)
 if ENABLE_FILTERS:
@@ -479,14 +475,46 @@ if user_input:
 
     # --- STEP 5: Create visualization ---
 
-    # TODO: ZAKI + UDHAYAKUMAR - Add multi-gene plotting logic here
-    # If ENABLE_MULTI_GENE and multiple genes detected:
-    #     plot = plot_multiple_genes(genes, filtered_data)
-    # Else:
-    #     plot = plot_gene_boxplot(gene_name, filtered_data)
+    # Multi-gene plotting: if multiple valid genes detected, try R bridge
+    if ENABLE_MULTI_GENE and len(valid_genes) > 1:
+        try:
+            from modules.python.r_bridge import plot_multiple_genes as r_plot_multi
+            img_path = r_plot_multi(valid_genes, filtered_data['expr_matrix'], filtered_data['metadata'])
 
-    # For now, use base single-gene plotting
-    st.session_state.current_gene = gene_name
+            # Store image path and context for display
+            st.session_state.current_plot_image = img_path
+            st.session_state.last_multi_genes = valid_genes
+
+            # Keep first gene as conversation context/backwards compatibility
+            st.session_state.current_gene = valid_genes[0]
+
+            llm_details['code_executed'] = f"plot_multiple_genes({valid_genes})"
+        except Exception as e:
+            # Try Python fallback before failing
+            try:
+                from utils.python.plot_utils import plot_multiple_genes as py_plot_multi
+                fig = py_plot_multi(valid_genes, filtered_data)
+                if fig is not None:
+                    st.session_state.current_plot_image = None
+                    st.session_state.current_plot_figure = fig
+                    st.session_state.last_multi_genes = valid_genes
+                    st.session_state.current_gene = valid_genes[0]
+                    llm_details['code_executed'] = f"python_plot_multiple_genes({valid_genes})"
+                else:
+                    raise RuntimeError("Python fallback returned no figure")
+            except Exception as e2:
+                st.session_state.messages.append({
+                    "type": "error",
+                    "text": f"Multi-gene plotting failed: {str(e)}; Python fallback: {str(e2)}. Showing single-gene plot for {gene_name}."
+                })
+                st.session_state.current_plot_image = None
+                st.session_state.current_plot_figure = None
+                st.session_state.current_gene = gene_name
+    else:
+        # Default single-gene plotting
+        st.session_state.current_plot_image = None
+        st.session_state.current_plot_figure = None
+        st.session_state.current_gene = gene_name
 
     # Build response message
     response_text = f"Here's the expression plot for {gene_name}"
@@ -520,19 +548,35 @@ if user_input:
 st.divider()
 st.header("Visualization")
 
-if st.session_state.current_gene is None:
+if st.session_state.current_gene is None and not st.session_state.get('current_plot_image'):
     st.info("No plot yet. Ask about a gene to see its expression!")
 else:
-    gene_name = st.session_state.current_gene
-
-    # Create and display plot
-    fig = plot_gene_boxplot(gene_name, expr_data)
-
-    if fig is not None:
-        st.pyplot(fig)
-        st.caption(f"Currently showing: **{gene_name}**")
+    # If we have an image saved by the R bridge for multi-gene plot, show it
+    if st.session_state.get('current_plot_image'):
+        st.image(st.session_state['current_plot_image'], use_column_width=True)
+        multi_genes = st.session_state.get('last_multi_genes', [])
+        if multi_genes:
+            st.caption(f"Currently showing: **{', '.join(multi_genes)}**")
+        else:
+            st.caption("Currently showing multi-gene plot")
+    elif st.session_state.get('current_plot_figure'):
+        st.pyplot(st.session_state['current_plot_figure'])
+        multi_genes = st.session_state.get('last_multi_genes', [])
+        if multi_genes:
+            st.caption(f"Currently showing: **{', '.join(multi_genes)}**")
+        else:
+            st.caption("Currently showing multi-gene plot")
     else:
-        st.error(f"Failed to create plot for {gene_name}")
+        gene_name = st.session_state.current_gene
+
+        # Create and display plot (Python fallback single-gene)
+        fig = plot_gene_boxplot(gene_name, expr_data)
+
+        if fig is not None:
+            st.pyplot(fig)
+            st.caption(f"Currently showing: **{gene_name}**")
+        else:
+            st.error(f"Failed to create plot for {gene_name}")
 
 
 # ============================================
