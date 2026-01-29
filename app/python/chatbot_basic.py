@@ -6,15 +6,17 @@ Usage:
     streamlit run app/python/chatbot_basic.py
 """
 
-import streamlit as st
-import sys
 import os
+import sys
+
+import streamlit as st
 
 # Add utils to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from utils.python.llm_utils import extract_gene_name, extract_gene_name_with_details, check_ollama_status
 from utils.python.plot_utils import load_expression_data, plot_gene_boxplot, get_available_genes
+from modules.python.conversation import ConversationManager
 
 
 # ============================================
@@ -93,6 +95,8 @@ if "current_gene" not in st.session_state:
 
 if "last_llm_details" not in st.session_state:
     st.session_state.last_llm_details = None
+if "conversation_mgr" not in st.session_state:
+    st.session_state.conversation_mgr = ConversationManager()
 
 
 # ============================================
@@ -148,6 +152,10 @@ with st.sidebar:
                 "type": "bot",
                 "text": f"Plotted {quick_gene} from quick select."
             })
+            st.session_state.conversation_mgr.add_turn(
+                "Quick plot",
+                quick_gene
+            )
             st.rerun()
 
     st.divider()
@@ -156,6 +164,7 @@ with st.sidebar:
     if st.button("🗑️ Clear Chat", use_container_width=True):
         st.session_state.messages = []
         st.session_state.current_gene = None
+        st.session_state.conversation_mgr.reset()
         st.rerun()
 
 
@@ -216,9 +225,23 @@ if user_input:
         "text": user_input
     })
 
+    user_lower = user_input.lower()
+    if any(kw in user_lower for kw in ["compare", "versus", " vs ", "vs."]):
+        st.session_state.messages.append({
+            "type": "error",
+            "text": "Multi-gene comparison isn't supported in this single-gene chatbot yet."
+        })
+        st.rerun()
+
+    # Resolve conversation context before extraction
+    resolved_input = st.session_state.conversation_mgr.resolve_context(
+        user_input,
+        current_gene=st.session_state.current_gene
+    )
+
     # Extract gene name using LLM (with details)
     with st.spinner("Processing your question..."):
-        llm_details = extract_gene_name_with_details(user_input)
+        llm_details = extract_gene_name_with_details(resolved_input)
 
     gene_name = llm_details['gene_name']
 
@@ -248,6 +271,10 @@ if user_input:
             # Store LLM details with the executed code
             llm_details['code_executed'] = f"plot_gene_boxplot('{gene_name}', expr_data)"
             st.session_state.last_llm_details = llm_details
+            st.session_state.conversation_mgr.add_turn(
+                user_input,
+                gene_name
+            )
 
     st.rerun()
 
