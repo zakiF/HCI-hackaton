@@ -25,7 +25,7 @@ import pandas as pd
 import requests
 import re
 
-DEBUG = True
+DEBUG = False
 TEST_DATA_PATH = os.path.join(os.path.dirname(__file__), "tests", "gene_query_tests.csv")
 TEST_OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "tests", "results")
 
