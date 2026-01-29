@@ -16,6 +16,7 @@ Examples:
 
 import sys
 import os
+from datetime import datetime
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from utils.python.ollama_utils import call_ollama, ask_llm_to_classify, ask_llm_to_extract
@@ -23,6 +24,8 @@ import pandas as pd
 import requests
 
 DEBUG = False
+TEST_DATA_PATH = os.path.join(os.path.dirname(__file__), "tests", "gene_query_tests.csv")
+TEST_OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "tests", "results")
 
 # ============================================
 # Intent Detection
@@ -43,11 +46,6 @@ def is_gene_question(user_input: str) -> bool:
         True
         >>> is_gene_question("Show me TP53")
         False
-
-    TODO for David:
-    1. Use LLM to classify intent OR use keyword detection
-    2. Look for question words: what, tell, explain, function, role, etc.
-    3. Distinguish from visualization requests
     """
 
     # Prefer LLM classification for better intent detection; fall back to keyword heuristics on failure
@@ -57,7 +55,8 @@ def is_gene_question(user_input: str) -> bool:
         context=(
             "Classify the intent of this gene-related query. "
             "Return only 'info' if the user is asking for gene information/description. "
-            "Return only 'plot' if the user is asking to visualize/plot expression."
+            "Return only 'plot' if the user is asking to visualize/plot expression. "
+            "Return only 'stats' if the user is asking for statistical analysis."
         ),
     )
     if DEBUG:
@@ -86,88 +85,9 @@ def is_gene_question(user_input: str) -> bool:
 # Knowledge Retrieval
 # ============================================
 
-def retrieve_gene_annotation(gene_name: str) -> dict:
-    """
-    Retrieve gene information from knowledge base.
-
-    For the hackathon, this could be:
-    1. A CSV file with gene annotations
-    2. An API call to a gene database
-    3. A simple dictionary of common genes
-
-    Args:
-        gene_name: Gene symbol (e.g., "TP53")
-
-    Returns:
-        dict with gene information
-
-    Example:
-        >>> info = retrieve_gene_annotation("TP53")
-        >>> print(info['description'])
-        "Tumor protein p53, tumor suppressor..."
-
-    TODO for David:
-    1. Create a simple gene annotation file/dict
-    2. Load it when module starts
-    3. Return gene info if found, else return basic message
-    4. Consider using real APIs like MyGene.info or NCBI
-    """
-
-    # Simple hardcoded knowledge base (David can expand this)
-    gene_database = {
-        "TP53": {
-            "full_name": "Tumor Protein P53",
-            "description": "TP53 is a tumor suppressor gene that encodes protein p53. It plays a critical role in preventing cancer by regulating cell division, DNA repair, and apoptosis. Mutations in TP53 are found in over 50% of human cancers.",
-            "aliases": ["p53", "TRP53"],
-            "chromosome": "17p13.1",
-            "function": "Tumor suppression, cell cycle regulation, apoptosis"
-        },
-        "BRCA1": {
-            "full_name": "Breast Cancer Type 1 Susceptibility Protein",
-            "description": "BRCA1 is a human tumor suppressor gene responsible for repairing DNA. Mutations in BRCA1 significantly increase the risk of breast and ovarian cancers. It plays a role in DNA damage repair, cell cycle checkpoints, and chromatin remodeling.",
-            "aliases": ["IRIS", "PSCP", "BRCAI"],
-            "chromosome": "17q21.31",
-            "function": "DNA repair, tumor suppression"
-        },
-        "EGFR": {
-            "full_name": "Epidermal Growth Factor Receptor",
-            "description": "EGFR is a cell surface receptor for epidermal growth factor. It regulates cell growth, survival, and differentiation. Overexpression or mutations in EGFR are associated with several cancers including lung, colorectal, and glioblastoma.",
-            "aliases": ["ERBB1", "HER1"],
-            "chromosome": "7p11.2",
-            "function": "Cell growth, proliferation, differentiation"
-        },
-        "MYC": {
-            "full_name": "MYC Proto-Oncogene",
-            "description": "MYC is a transcription factor that regulates expression of many genes involved in cell proliferation, growth, and apoptosis. It is one of the most commonly activated oncogenes in human cancers.",
-            "aliases": ["c-Myc", "bHLHe39"],
-            "chromosome": "8q24.21",
-            "function": "Transcription regulation, cell proliferation"
-        }
-    }
-
-    # Look up gene
-    gene_upper = gene_name.upper()
-
-    if gene_upper in gene_database:
-        return {
-            'found': True,
-            'gene': gene_upper,
-            **gene_database[gene_upper]
-        }
-    else:
-        # Not in our database
-        return {
-            'found': False,
-            'gene': gene_upper,
-            'description': f"Information about {gene_upper} is not available in our local knowledge base. This gene may be less commonly studied or have specialized functions."
-        }
-
-
 def fetch_from_mygene_api(gene_name: str) -> dict:
     """
-    Optional: Fetch gene info from MyGene.info API.
-
-    This is a bonus feature David could add if time permits.
+    Fetch gene info from MyGene.info API.
 
     Args:
         gene_name: Gene symbol
@@ -251,12 +171,6 @@ def generate_gene_explanation(gene_name: str, gene_info: dict, user_question: st
         >>> explanation = generate_gene_explanation("TP53", tp53_info, "What does TP53 do?")
         >>> print(explanation)
         "TP53 is a crucial tumor suppressor gene that acts as the 'guardian of the genome'..."
-
-    TODO for David:
-    1. Build a prompt that includes the retrieved information
-    2. Ask LLM to explain it in accessible language
-    3. Make it answer the specific question asked
-    4. Use temperature ~0.3-0.5 for more natural explanations
     """
     if DEBUG:
         print(not gene_info.get('found'))
@@ -329,7 +243,6 @@ def answer_gene_question(user_input: str) -> str:
         return "I couldn't identify which gene you're asking about. Please mention a specific gene name."
 
     # Step 2: Retrieve gene information (RAG retrieval step)
-    # gene_info = retrieve_gene_annotation(gene_name)
     gene_info = fetch_from_mygene_api(gene_name)
     if DEBUG:
         print(gene_info)
@@ -369,6 +282,176 @@ def extract_gene_from_question(user_input: str) -> str:
 
 
 # ============================================
+# Test Runner
+# ============================================
+
+def judge_answer_with_llm(question: str, answer: str) -> tuple[str, str]:
+    """
+    Use the LLM as a lightweight judge to grade an answer.
+
+    Returns:
+        verdict: correct | partial | incorrect | unknown
+        reason: short rationale from the judge
+    """
+
+    prompt = f"""
+You are scoring an answer to a gene information question.
+Provide:
+verdict: correct | partial | incorrect
+reason: one short sentence explaining why.
+
+Question: {question}
+Answer: {answer}
+"""
+
+    resp = call_ollama(prompt, temperature=0)
+    if not resp:
+        return "unknown", "No judge response"
+
+    verdict = "unknown"
+    reason = ""
+    for line in resp.splitlines():
+        lower = line.lower()
+        if lower.startswith("verdict:"):
+            verdict = line.split(":", 1)[1].strip().lower()
+        if lower.startswith("reason:"):
+            reason = line.split(":", 1)[1].strip()
+
+    if not reason:
+        reason = resp.strip()
+
+    return verdict, reason
+
+
+def run_batch_tests(
+    test_path: str,
+    max_rows: int | None = None,
+    output_path: str | None = None,
+    run_judge: bool = True,
+    manual_review_count: int = 3,
+) -> None:
+    """
+    Load test cases from CSV and evaluate intent detection, gene extraction, and (optionally) answer quality.
+
+    Args:
+        test_path: Path to CSV with columns user_input, expected_intent, expected_gene.
+        max_rows: Optional cap on number of rows to evaluate.
+        output_path: Optional CSV path to write detailed results (predictions, answers, judge verdict).
+        run_judge: If True, call LLM judge for info-type questions.
+        manual_review_count: Number of info answers to print for manual inspection.
+    """
+
+    if not os.path.exists(test_path):
+        print(f"No test data found at {test_path}")
+        return
+
+    df = pd.read_csv(test_path)
+    if max_rows:
+        df = df.head(max_rows)
+
+    total = len(df)
+    if total == 0:
+        print("Test file is empty.")
+        return
+
+    intent_correct = 0
+    gene_correct = 0
+    mismatches = []
+    results = []
+    manual_review = []
+
+    for idx, row in df.iterrows():
+        user_input = row["user_input"]
+        expected_intent = str(row["expected_intent"]).strip().lower()
+        expected_gene = str(row["expected_gene"]).strip().upper()
+
+        predicted_intent = "info" if is_gene_question(user_input) else "plot"
+        predicted_gene = extract_gene_from_question(user_input) or ""
+
+        answer = ""
+        judge_verdict = "skipped"
+        judge_reason = ""
+
+        if predicted_intent == "info":
+            answer = answer_gene_question(user_input)
+            if run_judge:
+                judge_verdict, judge_reason = judge_answer_with_llm(user_input, answer)
+            if len(manual_review) < manual_review_count:
+                manual_review.append(
+                    {
+                        "index": idx,
+                        "user_input": user_input,
+                        "answer": answer,
+                        "judge_verdict": judge_verdict,
+                        "judge_reason": judge_reason,
+                    }
+                )
+
+        intent_ok = predicted_intent == expected_intent
+        gene_ok = predicted_gene == expected_gene
+
+        intent_correct += int(intent_ok)
+        gene_correct += int(gene_ok)
+
+        if not (intent_ok and gene_ok):
+            mismatches.append(
+                {
+                    "index": idx,
+                    "user_input": user_input,
+                    "expected_intent": expected_intent,
+                    "predicted_intent": predicted_intent,
+                    "expected_gene": expected_gene,
+                    "predicted_gene": predicted_gene,
+                    "answer": answer,
+                    "judge_verdict": judge_verdict,
+                    "judge_reason": judge_reason,
+                }
+            )
+
+        results.append(
+            {
+                "user_input": user_input,
+                "expected_intent": expected_intent,
+                "predicted_intent": predicted_intent,
+                "expected_gene": expected_gene,
+                "predicted_gene": predicted_gene,
+                "answer": answer,
+                "judge_verdict": judge_verdict,
+                "judge_reason": judge_reason,
+            }
+        )
+
+    print(f"Ran {total} test cases (max_rows={max_rows}).")
+    print(f"Intent accuracy: {intent_correct}/{total}")
+    print(f"Gene extraction accuracy: {gene_correct}/{total}")
+
+    if mismatches:
+        print("First few mismatches (up to 5):")
+        for miss in mismatches[:5]:
+            print(
+                f"- #{miss['index']}: '{miss['user_input']}' "
+                f"expected intent={miss['expected_intent']} predicted intent={miss['predicted_intent']} "
+                f"expected gene={miss['expected_gene']} predicted gene={miss['predicted_gene']}"
+            )
+    else:
+        print("All test cases matched expectations.")
+
+    if manual_review:
+        print("\nManual review samples (info answers):")
+        for item in manual_review:
+            print(
+                f"- #{item['index']} | {item['user_input']}\n"
+                f"  Answer: {item['answer']}\n"
+                f"  Judge: {item['judge_verdict']} ({item['judge_reason']})"
+            )
+
+    if output_path:
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        pd.DataFrame(results).to_csv(output_path, index=False)
+        print(f"Detailed results written to {output_path}")
+
+
+# ============================================
 # Testing / Development
 # ============================================
 
@@ -397,7 +480,7 @@ if __name__ == "__main__":
     # Test retrieval
     print("2. Knowledge Retrieval:")
     gene = "TP53"
-    info = retrieve_gene_annotation(gene)
+    info = fetch_from_mygene_api(gene)
     print(f"   Gene: {gene}")
     print(f"   Found: {info['found']}")
     if info['found']:
@@ -412,10 +495,16 @@ if __name__ == "__main__":
     print(f"   Answer: {answer}")
     print()
 
-    print("\n=== Tips for David ===")
-    print("1. Expand the gene_database with more genes")
-    print("2. Consider loading gene info from a CSV file")
-    print("3. Optional: Integrate with MyGene.info API for real-time data")
-    print("4. Experiment with different prompt styles for better explanations")
-    print("5. Think about: How to handle multi-gene questions?")
-    print("6. Bonus: Add gene-gene interaction information")
+    # Batch tests from CSV (adjust max_rows to cap runtime)
+    print("4. Batch test suite from CSV:")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_path = os.path.join(TEST_OUTPUT_DIR, f"gene_query_results_{timestamp}.csv")
+    run_batch_tests(
+        TEST_DATA_PATH,
+        max_rows=None,
+        output_path=output_path,
+        run_judge=True,
+        manual_review_count=5,
+    )
+
+    

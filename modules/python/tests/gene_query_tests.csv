@@ -1,0 +1,82 @@
+user_input,expected_intent,expected_gene
+What does TP53 do?,info,TP53
+Explain the tumor suppressor role of RB1,info,RB1
+How does PTEN regulate the PI3K AKT pathway,info,PTEN
+What is the function of CDKN2A in cell cycle control,info,CDKN2A
+Tell me about BRCA1 and DNA damage repair,info,BRCA1
+Describe the role of BRCA2 in homologous recombination,info,BRCA2
+What does APC do in WNT signaling,info,APC
+Explain SMAD4 in TGF beta signaling,info,SMAD4
+How does NF1 regulate RAS signaling,info,NF1
+What is the job of VHL in hypoxia response,info,VHL
+What pathway does KRAS activate,info,KRAS
+Describe NRAS in MAPK signaling,info,NRAS
+What does HRAS control,info,HRAS
+Why is BRAF important in melanoma,info,BRAF
+What is the role of EGFR as a receptor tyrosine kinase,info,EGFR
+Explain ERBB2 in breast cancer,info,ERBB2
+Tell me about MYC and transcriptional amplification,info,MYC
+How does CCND1 drive cell cycle progression,info,CCND1
+What cancers involve ALK fusions,info,ALK
+Describe the role of RET in thyroid cancer,info,RET
+What does ATM sense in DNA damage response,info,ATM
+Explain ATR and replication stress,info,ATR
+Describe CHEK1 checkpoint signaling,info,CHEK1
+How does CHEK2 maintain genomic stability,info,CHEK2
+What is RAD51 used for in repair,info,RAD51
+How does PALB2 support BRCA1 and BRCA2,info,PALB2
+What is the function of MSH2 in mismatch repair,info,MSH2
+Explain MLH1 in mismatch repair,info,MLH1
+Describe MSH6 role in DNA repair,info,MSH6
+What does PMS2 do in mismatch repair,info,PMS2
+Why is ARID1A important in SWI SNF complex,info,ARID1A
+Explain SMARCA4 as a chromatin remodeler,info,SMARCA4
+What does KMT2D do to histones,info,KMT2D
+Describe EZH2 in PRC2 methylation,info,EZH2
+How does DNMT3A set DNA methylation patterns,info,DNMT3A
+What is TET2 role in demethylation,info,TET2
+Explain IDH1 mutations and epigenetics,info,IDH1
+Explain IDH2 mutations and epigenetics,info,IDH2
+How does FOXA1 affect hormone signaling,info,FOXA1
+What does GATA3 regulate in breast cancer,info,GATA3
+Describe SOX2 and stemness,info,SOX2
+What role does RUNX1 play in leukemia,info,RUNX1
+How does STAT3 drive inflammatory signaling,info,STAT3
+Describe STAT5A in hematologic malignancies,info,STAT5A
+Explain NFE2L2 in oxidative stress response,info,NFE2L2
+What is the function of HIF1A under hypoxia,info,HIF1A
+How does BCL2 prevent apoptosis,info,BCL2
+Explain BCL2L1 anti apoptotic role,info,BCL2L1
+What does MCL1 do for cell survival,info,MCL1
+How does BAX promote apoptosis,info,BAX
+Explain BAK1 in mitochondrial apoptosis,info,BAK1
+What triggers CASP8 activation,info,CASP8
+Describe CASP3 as an executioner caspase,info,CASP3
+What is PDCD1 in immune checkpoints,info,PDCD1
+What does CD274 do as PD L1,info,CD274
+Explain CTLA4 in T cell regulation,info,CTLA4
+What is LAG3 function in immunity,info,LAG3
+Describe TIGIT role in tumor microenvironment,info,TIGIT
+How does IFNG shape immune response,info,IFNG
+What does CXCL9 signal in tumors,info,CXCL9
+Explain CXCL10 chemokine function,info,CXCL10
+What is the effect of IL6 in inflammation,info,IL6
+How does TGFB1 influence the tumor microenvironment,info,TGFB1
+Why is TMPRSS2 involved in prostate cancer fusions,info,TMPRSS2
+What is the role of ERG in prostate tumors,info,ERG
+Describe BCR in chronic myeloid leukemia,info,BCR
+What does ABL1 do in CML,info,ABL1
+Explain ETV6 involvement in leukemia,info,ETV6
+What are NTRK1 fusion driven tumors,info,NTRK1
+What are NTRK2 fusion driven tumors,info,NTRK2
+What are NTRK3 fusion driven tumors,info,NTRK3
+Plot TP53 expression across samples,plot,TP53
+Show a line plot of KRAS expression,plot,KRAS
+Visualize EGFR expression levels in a heatmap,plot,EGFR
+Graph BRCA1 expression in this dataset,plot,BRCA1
+Display a boxplot of MYC expression,plot,MYC
+Generate a volcano plot highlighting BRAF,plot,BRAF
+Create a scatter plot for PDCD1 expression,plot,PDCD1
+Plot CD274 counts across conditions,plot,CD274
+Make a bar chart of ALK fusion read counts,plot,ALK
+Show TPM distribution for VHL,plot,VHL
