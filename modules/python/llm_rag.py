@@ -18,7 +18,7 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
-from utils.python.ollama_utils import call_ollama, ask_llm_to_extract
+from utils.python.ollama_utils import call_ollama, ask_llm_to_classify, ask_llm_to_extract
 import pandas as pd
 
 
@@ -48,7 +48,22 @@ def is_gene_question(user_input: str) -> bool:
     3. Distinguish from visualization requests
     """
 
-    # Keyword detection (David can enhance with LLM classification)
+    # Prefer LLM classification for better intent detection; fall back to keyword heuristics on failure
+    category = ask_llm_to_classify(
+        user_input,
+        options=["info", "plot"],
+        context=(
+            "Classify the intent of this gene-related query. "
+            "Return only 'info' if the user is asking for gene information/description. "
+            "Return only 'plot' if the user is asking to visualize/plot expression."
+        ),
+    )
+    print(f"Intent classification result: {category}")
+
+    if category:
+        return category.lower() == "info"
+
+    # Keyword fallback (keeps previous behavior if LLM is unavailable)
     question_keywords = [
         'what', 'tell me', 'explain', 'describe',
         'function', 'role', 'purpose', 'about',
@@ -57,12 +72,9 @@ def is_gene_question(user_input: str) -> bool:
 
     user_lower = user_input.lower()
 
-    # Check for question patterns
     for keyword in question_keywords:
-        if keyword in user_lower:
-            # Make sure it's not also a plot request
-            if not any(plot_word in user_lower for plot_word in ['show', 'plot', 'display', 'graph']):
-                return True
+        if keyword in user_lower and not any(plot_word in user_lower for plot_word in ['show', 'plot', 'display', 'graph']):
+            return True
 
     return False
 
