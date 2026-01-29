@@ -48,8 +48,8 @@ extract_gene_names <- function(user_input) {
   # Prompt for LLM
   prompt <- paste0(
     "Extract ALL gene names from this query.\n",
-    "Return as JSON array with key 'genes'.\n",
-    "Gene names should be in uppercase.\n\n",
+    "Return ONLY valid JSON, nothing else. No explanation, no markdown, no code blocks.\n",
+    "Format: {\"genes\": [\"GENE1\", \"GENE2\"]}\n\n",
     "Query: ", user_input, "\n\n",
     "JSON:"
   )

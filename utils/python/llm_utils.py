@@ -76,12 +76,11 @@ def extract_gene_name(user_question: str) -> Optional[str]:
         The extracted gene name (uppercase), or None if not found
     """
     prompt = (
-        "Extract ONLY the gene name from this question. "
-        "Return ONLY the gene name in uppercase, nothing else. "
-        "If no gene name is found, return 'NONE'.\n\n"
-        f"Question: {user_question}\n"
-        "Gene name:"
-    )
+    "Extract ALL gene names from this query.\n"
+    "Return ONLY valid JSON, nothing else. No explanation, no markdown, no code blocks.\n"
+    "Format: {\"genes\": [\"GENE1\", \"GENE2\"]}\n\n"
+    f"Query: {user_input}\n\n"
+    "JSON:")
 
     response = ask_ollama(prompt, temperature=0.1)
 
@@ -104,7 +103,7 @@ def extract_gene_name(user_question: str) -> Optional[str]:
 
 def extract_gene_name_with_details(user_question: str) -> dict:
     """
-    Extract gene name from natural language query using LLM.
+    Extract gene name(s) from natural language query using LLM.
     Returns detailed information about the LLM interaction.
 
     Parameters
@@ -116,17 +115,20 @@ def extract_gene_name_with_details(user_question: str) -> dict:
     -------
     dict
         Dictionary with keys:
-        - 'gene_name': Extracted gene name (str or None)
+        - 'gene_name': First extracted gene name (str or None) - for backwards compatibility
+        - 'gene_names': List of all extracted gene names (list)
         - 'prompt': The prompt sent to LLM
         - 'llm_response': Raw response from LLM
         - 'success': Whether extraction succeeded (bool)
     """
     prompt = (
-        "Extract ONLY the gene name from this question. "
-        "Return ONLY the gene name in uppercase, nothing else. "
-        "If no gene name is found, return 'NONE'.\n\n"
-        f"Question: {user_question}\n"
-        "Gene name:"
+        "Extract ALL gene names from this query.\n"
+        "Return ONLY valid JSON, nothing else. No explanation, no markdown, no code blocks.\n"
+        "Format: {\"genes\": [\"GENE1\", \"GENE2\"]}\n"
+        "If only one gene, return: {\"genes\": [\"GENE1\"]}\n"
+        "If no genes found, return: {\"genes\": []}\n\n"
+        f"Question: {user_question}\n\n"
+        "JSON:"
     )
 
     response = ask_ollama(prompt, temperature=0.1)
@@ -135,28 +137,70 @@ def extract_gene_name_with_details(user_question: str) -> dict:
         'prompt': prompt,
         'llm_response': response if response else "No response from LLM",
         'gene_name': None,
+        'gene_names': [],
         'success': False
     }
 
     if response is None:
         return result
 
-    # Clean up response
-    gene_name = response.upper().strip()
-
     # Store original response for display
     result['llm_response'] = response
 
-    # Remove any non-alphanumeric characters except hyphen
+    # Try to parse JSON response
+    import json
     import re
-    gene_name = re.sub(r'[^A-Z0-9-]', '', gene_name)
 
-    # Check if valid
-    if gene_name == "NONE" or gene_name == "" or len(gene_name) == 0:
-        return result
+    try:
+        # Clean the response - extract just the JSON part
+        response_clean = response.strip()
 
-    result['gene_name'] = gene_name
-    result['success'] = True
+        # Remove markdown code blocks if present
+        response_clean = re.sub(r'^```json\s*', '', response_clean)
+        response_clean = re.sub(r'^```\s*', '', response_clean)
+        response_clean = re.sub(r'\s*```$', '', response_clean)
+
+        # Extract content between first { and last }
+        if '{' in response_clean and '}' in response_clean:
+            start = response_clean.index('{')
+            end = response_clean.rindex('}') + 1
+            response_clean = response_clean[start:end]
+
+        # Parse JSON
+        parsed = json.loads(response_clean)
+        genes = parsed.get('genes', [])
+
+        if genes and len(genes) > 0:
+            # Clean up gene names
+            clean_genes = []
+            for gene in genes:
+                gene_upper = str(gene).upper().strip()
+                # Remove non-alphanumeric except hyphen
+                gene_clean = re.sub(r'[^A-Z0-9-]', '', gene_upper)
+                if gene_clean and gene_clean != "NONE":
+                    clean_genes.append(gene_clean)
+
+            if clean_genes:
+                result['gene_names'] = clean_genes
+                result['gene_name'] = clean_genes[0]  # First gene for backwards compatibility
+                result['success'] = True
+
+    except (json.JSONDecodeError, ValueError, KeyError) as e:
+        # JSON parsing failed - try fallback: extract gene-like words
+        import re
+        # Look for capitalized words that look like gene names (2-10 uppercase letters/numbers)
+        potential_genes = re.findall(r'\b[A-Z][A-Z0-9-]{1,9}\b', response.upper())
+
+        if potential_genes:
+            # Filter out common words
+            exclude = ['NONE', 'NULL', 'UNKNOWN', 'GENE', 'JSON', 'TRUE', 'FALSE']
+            genes = [g for g in potential_genes if g not in exclude]
+
+            if genes:
+                result['gene_names'] = genes
+                result['gene_name'] = genes[0]
+                result['success'] = True
+
     return result
 
 
