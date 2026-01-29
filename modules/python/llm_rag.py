@@ -20,7 +20,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from utils.python.ollama_utils import call_ollama, ask_llm_to_classify, ask_llm_to_extract
 import pandas as pd
+import requests
 
+DEBUG = False
 
 # ============================================
 # Intent Detection
@@ -58,7 +60,8 @@ def is_gene_question(user_input: str) -> bool:
             "Return only 'plot' if the user is asking to visualize/plot expression."
         ),
     )
-    print(f"Intent classification result: {category}")
+    if DEBUG:
+        print(f"Intent classification result: {category}")
 
     if category:
         return category.lower() == "info"
@@ -176,13 +179,54 @@ def fetch_from_mygene_api(gene_name: str) -> dict:
         >>> info = fetch_from_mygene_api("TP53")
     """
 
-    # TODO for David (optional, if time permits):
-    # import requests
-    # url = f"https://mygene.info/v3/query?q={gene_name}&species=human"
-    # response = requests.get(url)
-    # ...
+    url = "https://mygene.info/v3/query"
+    params = {
+        "q": gene_name,
+        "species": "human",
+        "size": 1,
+        "fields": "symbol,name,summary,alias,chromosome,map_location,entrezgene,ensembl,uniprot"
+    }
 
-    pass  # Not implemented yet
+    try:
+        resp = requests.get(url, params=params, timeout=5)
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as e:
+        return {
+            "found": False,
+            "gene": gene_name.upper(),
+            "description": f"Error fetching info from MyGene.info: {e}"
+        }
+
+    hits = data.get("hits", []) if isinstance(data, dict) else []
+    if not hits:
+        return {
+            "found": False,
+            "gene": gene_name.upper(),
+            "description": f"No information found for {gene_name} via MyGene.info."
+        }
+
+    hit = hits[0]
+    ensembl_id = None
+    ensembl_field = hit.get("ensembl")
+    if isinstance(ensembl_field, dict):
+        ensembl_id = ensembl_field.get("gene")
+    elif isinstance(ensembl_field, list) and ensembl_field:
+        ensembl_id = ensembl_field[0].get("gene") if isinstance(ensembl_field[0], dict) else None
+
+    description = hit.get("summary") or hit.get("name") or "No description available."
+
+    return {
+        "found": True,
+        "gene": (hit.get("symbol") or gene_name).upper(),
+        "full_name": hit.get("name"),
+        "description": description,
+        "aliases": hit.get("alias", []),
+        "chromosome": hit.get("chromosome") or hit.get("map_location") or "N/A",
+        "entrez_id": hit.get("entrezgene"),
+        "ensembl_id": ensembl_id,
+        "raw": hit,
+    }
 
 
 # ============================================
@@ -214,7 +258,8 @@ def generate_gene_explanation(gene_name: str, gene_info: dict, user_question: st
     3. Make it answer the specific question asked
     4. Use temperature ~0.3-0.5 for more natural explanations
     """
-
+    if DEBUG:
+        print(not gene_info.get('found'))
     if not gene_info.get('found'):
         # Gene not in knowledge base
         prompt = f"""
@@ -284,7 +329,10 @@ def answer_gene_question(user_input: str) -> str:
         return "I couldn't identify which gene you're asking about. Please mention a specific gene name."
 
     # Step 2: Retrieve gene information (RAG retrieval step)
-    gene_info = retrieve_gene_annotation(gene_name)
+    # gene_info = retrieve_gene_annotation(gene_name)
+    gene_info = fetch_from_mygene_api(gene_name)
+    if DEBUG:
+        print(gene_info)
 
     # Step 3: Generate answer using LLM (RAG generation step)
     answer = generate_gene_explanation(gene_name, gene_info, user_input)
