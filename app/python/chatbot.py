@@ -16,7 +16,7 @@ import os
 # Add utils to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
-from utils.python.llm_utils import extract_gene_name, extract_gene_name_with_details, check_ollama_status
+from utils.python.llm_utils import extract_gene_name, extract_gene_name_with_details, check_ollama_status, detect_plot_type
 from utils.python.plot_utils import load_expression_data, plot_gene_boxplot, get_available_genes
 from modules.python.conversation import ConversationManager
 
