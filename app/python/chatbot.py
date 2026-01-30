@@ -614,7 +614,7 @@ if user_input:
     # Update conversation context (Miao)
     if ENABLE_CONVERSATION and st.session_state.conversation_mgr:
         try:
-            st.session_state.conversation_mgr.add_turn(user_input, gene_name)
+            st.session_state.conversation_mgr.add_turn(user_input, gene_name, filter_info)
         except:
             pass
 

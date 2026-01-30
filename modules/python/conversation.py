@@ -35,22 +35,26 @@ class ConversationManager:
 
     def __init__(self):
         """Initialize conversation manager."""
-        self.history = []  # List of (user_input, gene_name) tuples
+        self.history = []  # List of (user_input, gene_name, filter_info) tuples
         self.last_gene = None
+        self.last_filter_info = None
 
-    def add_turn(self, user_input: str, gene_name: str):
+    def add_turn(self, user_input: str, gene_name: str, filter_info: dict = None):
         """
         Record a conversation turn.
 
         Args:
             user_input: What the user asked
             gene_name: Which gene was plotted
+            filter_info: Filter information (optional), e.g., {'has_filter': True, 'group_suffix': 'tumor', ...}
 
         Example:
             >>> conv_mgr.add_turn("Show me TP53", "TP53")
+            >>> conv_mgr.add_turn("Plot TP53 in tumor and normal", "TP53", filter_info={'has_filter': True, ...})
         """
-        self.history.append((user_input, gene_name))
+        self.history.append((user_input, gene_name, filter_info))
         self.last_gene = gene_name
+        self.last_filter_info = filter_info
 
     def resolve_context(self, user_input: str, current_gene: str = None) -> str:
         """
@@ -124,9 +128,11 @@ Answer:
         llm_result = call_ollama(llm_prompt, temperature=0.1)
         if llm_result:
             llm_result = llm_result.strip().upper()
-            if llm_result in {"YES", "NO"}:
-                return llm_result == "YES"
-        # Fallback: Keyword-based detection
+            if llm_result == "YES":
+                return True
+            # If LLM says "NO", still check fallback keywords as LLM might be wrong
+
+        # Fallback: Keyword-based detection (always check this for robustness)
         # Explicit pronoun or reference words as whole words
         if re.search(r"\b(it|that|this|those|them|one|same|previous|earlier)\b", user_lower):
             return True
@@ -135,8 +141,16 @@ Answer:
         if re.search(r"\b(now|also|instead|change|switch|another|different)\b", user_lower):
             return True
 
-        # Plot-type change without naming a gene
-        if detect_plot_type_change(user_input) is not None:
+        # Plot-type change without naming a gene - but ONLY if we have conversation history
+        # If no history, it's a new query, not a followup
+        if len(self.history) > 0 and detect_plot_type_change(user_input) is not None:
+            # Check if the query explicitly mentions a gene name
+            # If it does, it's not a follow-up, it's a new plot request
+            import re as regex
+            # Look for patterns like "Plot GENE as", "Show GENE as"
+            if regex.search(r'\b(plot|show|display|visualize)\s+[A-Z][A-Z0-9-]{2,}\s+(as|in|with)', user_input, regex.IGNORECASE):
+                # This is a new plot request with explicit gene and plot type
+                return False
             return True
 
         return False
@@ -163,13 +177,49 @@ Answer:
         recent = self.history[-3:]  # Last 3 turns
 
         context_lines = ["Previous conversation:"]
-        for user_q, gene in recent:
+        for item in recent:
+            # Handle both old format (user_q, gene) and new format (user_q, gene, filter_info)
+            if len(item) == 3:
+                user_q, gene, filter_info = item
+            else:
+                user_q, gene = item
+                filter_info = None
+
             context_lines.append(f"- User asked: {user_q}")
             context_lines.append(f"  Gene shown: {gene}")
+
+            # Add filter information if present
+            if filter_info and filter_info.get('has_filter'):
+                if 'include_suffixes' in filter_info and filter_info['include_suffixes']:
+                    # Multi-group filter (e.g., "tumor and normal")
+                    conditions = filter_info['include_suffixes']
+                    context_lines.append(f"  Conditions: {', '.join(conditions)}")
+                elif filter_info.get('group_suffix'):
+                    # Single-group filter
+                    suffix = filter_info['group_suffix']
+                    exclude = filter_info.get('exclude', False)
+                    if exclude:
+                        context_lines.append(f"  Excluding: {suffix}")
+                    else:
+                        context_lines.append(f"  Only showing: {suffix}")
 
         active_gene = current_gene or self.last_gene
         if active_gene:
             context_lines.append(f"\nCurrently showing: {active_gene}")
+
+            # Add current filter info if available
+            if self.last_filter_info and self.last_filter_info.get('has_filter'):
+                if 'include_suffixes' in self.last_filter_info and self.last_filter_info['include_suffixes']:
+                    conditions = self.last_filter_info['include_suffixes']
+                    # Map internal suffixes to readable condition names
+                    condition_map = {
+                        'normal': 'Normal',
+                        'tumor': 'Primary Tumor',
+                        'mets': 'Metastatic',
+                        'non_normal': 'tumor (Primary + Metastatic)'
+                    }
+                    readable_conditions = [condition_map.get(c, c) for c in conditions]
+                    context_lines.append(f"Comparing conditions: {' vs '.join(readable_conditions)}")
 
         return "\n".join(context_lines)
 
@@ -189,13 +239,22 @@ Answer:
         """
 
         prompt = f"""
-You are resolving contextual references in a conversation.
+You are resolving contextual references in a conversation about gene expression analysis.
 
 {context}
 
 User just said: "{user_input}"
 
-Rewrite by replacing "it"/"that" with the actual gene name.
+TASK:
+Rewrite the query to be standalone and explicit:
+- Replace "it"/"that"/"this" with the actual gene name
+- If asking about statistical significance/tests, include both the gene AND the conditions being compared
+- If conditions are mentioned in context, include them in the rewritten query
+
+EXAMPLES:
+- "Is it significant?" + Context: "TP53, comparing tumor vs normal" → "Is TP53 expression significantly different between tumor and normal?"
+- "Show it as violin" + Context: "TP53" → "Show TP53 as violin plot"
+- "What about normal samples?" + Context: "TP53 in tumor" → "Show TP53 in normal samples"
 
 Return ONLY the rewritten query, nothing else.
 
@@ -214,6 +273,7 @@ Rewritten query:
         """Clear conversation history."""
         self.history = []
         self.last_gene = None
+        self.last_filter_info = None
 
 
 # ============================================

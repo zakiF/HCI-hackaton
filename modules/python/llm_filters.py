@@ -276,7 +276,8 @@ def apply_filters(expr_data: dict, filter_info: dict) -> dict:
         return expr_data
 
     metadata = expr_data["metadata"]
-    expression = expr_data["expression"]
+    # Handle both 'expression' and 'expr_matrix' keys
+    expression = expr_data.get("expression") or expr_data.get("expr_matrix")
 
     if "group" not in metadata.columns:
         return expr_data
@@ -300,10 +301,26 @@ def apply_filters(expr_data: dict, filter_info: dict) -> dict:
         for suf in uniq[1:]:
             mask = mask | in_suffix(suf)
 
-        keep_samples = metadata.index[mask]
+        # Get Run IDs for filtered samples
+        keep_indices = metadata.index[mask]
+        filtered_metadata = metadata.loc[keep_indices]
+
+        # Use Run column to filter expression matrix
+        if 'Run' in filtered_metadata.columns:
+            keep_runs = filtered_metadata['Run'].tolist()
+        else:
+            keep_runs = filtered_metadata.index.tolist()
+
+        filtered_expression = expression.loc[:, keep_runs]
+
+        # Recreate expr_long from filtered data
+        expr_long = _create_expr_long(filtered_expression, filtered_metadata)
+
         return {
-            "metadata": metadata.loc[keep_samples],
-            "expression": expression.loc[:, keep_samples],
+            "metadata": filtered_metadata,
+            "expression": filtered_expression,
+            "expr_matrix": filtered_expression,  # Alias for compatibility
+            "expr_long": expr_long,
         }
 
     # Single-group include/exclude
@@ -313,12 +330,72 @@ def apply_filters(expr_data: dict, filter_info: dict) -> dict:
         return expr_data
 
     mask = in_suffix(group_suffix)
-    keep_samples = metadata.index[~mask] if exclude else metadata.index[mask]
+
+    # Get indices for filtered samples
+    keep_indices = metadata.index[~mask] if exclude else metadata.index[mask]
+    filtered_metadata = metadata.loc[keep_indices]
+
+    # Use Run column to filter expression matrix
+    if 'Run' in filtered_metadata.columns:
+        keep_runs = filtered_metadata['Run'].tolist()
+    else:
+        keep_runs = filtered_metadata.index.tolist()
+
+    filtered_expression = expression.loc[:, keep_runs]
+
+    # Recreate expr_long from filtered data
+    expr_long = _create_expr_long(filtered_expression, filtered_metadata)
 
     return {
-        "metadata": metadata.loc[keep_samples],
-        "expression": expression.loc[:, keep_samples],
+        "metadata": filtered_metadata,
+        "expression": filtered_expression,
+        "expr_matrix": filtered_expression,  # Alias for compatibility
+        "expr_long": expr_long,
     }
+
+
+def _create_expr_long(expr_matrix, metadata):
+    """
+    Helper to create expr_long DataFrame from expression matrix and metadata.
+    Matches the format from load_expression_data() in plot_utils.py
+    """
+    import pandas as pd
+
+    # Clean up group names for better display
+    def clean_condition(group):
+        if 'normal' in str(group).lower():
+            return 'Normal'
+        elif 'tumor' in str(group).lower() and 'met' not in str(group).lower():
+            return 'Primary Tumor'
+        elif 'met' in str(group).lower():
+            return 'Metastatic'
+        else:
+            return group
+
+    # Create a copy of metadata with condition column
+    metadata_with_condition = metadata.copy()
+    metadata_with_condition['condition'] = metadata_with_condition['group'].apply(clean_condition)
+
+    # Set condition order
+    condition_order = ['Normal', 'Primary Tumor', 'Metastatic']
+    metadata_with_condition['condition'] = pd.Categorical(
+        metadata_with_condition['condition'],
+        categories=condition_order,
+        ordered=True
+    )
+
+    # Convert to long format for plotting
+    expr_long = expr_matrix.T.reset_index()
+    expr_long.columns.name = None
+    expr_long = expr_long.rename(columns={'index': 'Run'})
+    expr_long = expr_long.melt(
+        id_vars=['Run'],
+        var_name='gene',
+        value_name='expression'
+    )
+    expr_long = expr_long.merge(metadata_with_condition, on='Run')
+
+    return expr_long
 
 
 
