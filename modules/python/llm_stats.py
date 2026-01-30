@@ -371,8 +371,12 @@ def handle_stats_query(user_input: str, expr_data: dict) -> dict:
 # ============================================
 
 if __name__ == "__main__":
+<<<<<<< Updated upstream
     """
     Test this module independently.
+=======
+    pass  # All test code is commented out
+>>>>>>> Stashed changes
 
     Run: python modules/python/llm_stats.py
     """

@@ -16,6 +16,11 @@ Examples:
 
 import sys
 import os
+<<<<<<< Updated upstream
+=======
+from datetime import datetime
+from typing import Optional, List
+>>>>>>> Stashed changes
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from utils.python.ollama_utils import call_ollama, ask_llm_to_extract
@@ -177,7 +182,11 @@ def fetch_from_mygene_api(gene_name: str) -> dict:
 # RAG: Generate Natural Language Answer
 # ============================================
 
+<<<<<<< Updated upstream
 def generate_gene_explanation(gene_name: str, gene_info: dict, user_question: str) -> str:
+=======
+def generate_gene_explanations(gene_names: List[str], gene_infos: List[dict], user_question: str) -> str:
+>>>>>>> Stashed changes
     """
     Use LLM to generate natural language explanation from retrieved info.
 
@@ -277,12 +286,95 @@ def answer_gene_question(user_input: str) -> str:
     # Step 3: Generate answer using LLM (RAG generation step)
     answer = generate_gene_explanation(gene_name, gene_info, user_input)
 
+<<<<<<< Updated upstream
     return answer
+=======
+
+def extract_genes_from_question(user_input: str) -> List[str]:
+    """
+    Extract one or more gene names from a question.
+
+    Returns a list of uppercase gene symbols (may be empty).
+    """
+
+    details = extract_gene_name_with_details(user_input)
+    genes = []
+    if details and details.get("success"):
+        genes = [g.upper().strip() for g in details.get("gene_names", []) if g]
+
+    # Fallback to single-gene extraction if multi-gene parsing failed
+    if not genes:
+        gene = ask_llm_to_extract(
+            user_input,
+            what_to_extract="gene name",
+            example="TP53"
+        )
+        if gene and gene != "NONE":
+            genes = [gene.upper().strip()]
+
+    # Deduplicate while preserving order
+    seen = set()
+    deduped = []
+    for g in genes:
+        if g and g not in seen:
+            deduped.append(g)
+            seen.add(g)
+
+    return deduped
+>>>>>>> Stashed changes
 
 
 def extract_gene_from_question(user_input: str) -> str:
     """
+<<<<<<< Updated upstream
     Extract gene name from a question.
+=======
+    Use the LLM as a lightweight judge to grade an answer.
+
+    Returns:
+        verdict: correct | partial | incorrect | unknown
+        reason: short rationale from the judge
+    """
+
+    prompt = f"""
+You are scoring an answer to a gene information question.
+Provide:
+verdict: correct | partial | incorrect
+reason: one short sentence explaining why.
+
+Question: {question}
+Answer: {answer}
+"""
+
+    resp = call_ollama(prompt, temperature=0)
+    if not resp:
+        return "unknown", "No judge response"
+
+    verdict = "unknown"
+    reason = ""
+    for line in resp.splitlines():
+        lower = line.lower()
+        if lower.startswith("verdict:"):
+            verdict = line.split(":", 1)[1].strip().lower()
+        if lower.startswith("reason:"):
+            reason = line.split(":", 1)[1].strip()
+
+    if not reason:
+        reason = resp.strip()
+
+    return verdict, reason
+
+
+def run_batch_tests(
+    test_path: str,
+    max_rows: Optional[int] = None,
+    output_path: Optional[str] = None,
+    run_judge: bool = True,
+    manual_review_count: int = 3,
+) -> None:
+    """
+    Load test cases from CSV and evaluate intent detection, gene extraction, and (optionally) answer quality.
+>>>>>>> Stashed changes
 
     Args:
         user_input: User's question
