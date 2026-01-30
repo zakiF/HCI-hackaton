@@ -17,6 +17,8 @@ Examples:
 import sys
 import os
 from datetime import datetime
+from typing import Optional, List
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from utils.python.ollama_utils import call_ollama, ask_llm_to_classify, ask_llm_to_extract
@@ -155,7 +157,7 @@ def fetch_from_mygene_api(gene_name: str) -> dict:
 # RAG: Generate Natural Language Answer
 # ============================================
 
-def generate_gene_explanations(gene_names: list[str], gene_infos: list[dict], user_question: str) -> str:
+def generate_gene_explanations(gene_names: List[str], gene_infos: List[dict], user_question: str) -> str:
     """
     Use LLM to generate natural language explanations for one or more genes in a single call.
 
@@ -258,7 +260,7 @@ def answer_gene_question(user_input: str) -> str:
     return generate_gene_explanations(genes, gene_infos, user_input)
 
 
-def extract_genes_from_question(user_input: str) -> list[str]:
+def extract_genes_from_question(user_input: str) -> List[str]:
     """
     Extract one or more gene names from a question.
 

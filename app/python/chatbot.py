@@ -16,8 +16,8 @@ import os
 # Add utils to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
-from utils.python.llm_utils import extract_gene_name, extract_gene_name_with_details, check_ollama_status
-from utils.python.plot_utils import load_expression_data, plot_gene_boxplot, get_available_genes
+from utils.python.llm_utils import extract_gene_name, extract_gene_name_with_details, check_ollama_status, detect_plot_type
+from utils.python.plot_utils import load_expression_data, plot_gene_boxplot, plot_gene_violin, plot_gene_barplot, plot_genes_heatmap, plot_multiple_genes, plot_multiple_violins, plot_multiple_barplots, get_available_genes
 
 
 # ============================================
@@ -29,7 +29,7 @@ SAFE_MODE = False
 
 if SAFE_MODE:
     # Emergency fallback - disable all experimental features
-    ENABLE_MULTI_GENE = True
+    ENABLE_MULTI_GENE = False
     ENABLE_FILTERS = False
     ENABLE_CONVERSATION = False
     ENABLE_STATS = False
@@ -191,12 +191,18 @@ with st.sidebar:
     # Base examples
     st.markdown("**Basic:**")
     st.markdown("- Show me expression of TP53")
-    st.markdown("- Plot BRCA1 across conditions")
+    st.markdown("- Plot BRCA1 as violin plot")
+    st.markdown("- Create barplot for TP53")
+    st.markdown("- Create heatmap for TP53")
 
     # Feature-specific examples
     if ENABLE_MULTI_GENE:
         st.markdown("**Multi-gene (Zaki+Udhaya):**")
         st.markdown("- Compare TP53, BRCA1, and EGFR")
+        st.markdown("- Show heatmap of TP53, BRCA1, MYC")
+        st.markdown("- Boxplot for TP53, BRCA1, EGFR")
+        st.markdown("- Barplot for TP53, BRCA1, EGFR")
+        st.markdown("- Violin plot for TP53, BRCA1, EGFR")
 
     if ENABLE_FILTERS:
         st.markdown("**Filtering (Qing):**")
@@ -451,7 +457,7 @@ if user_input:
         else:
             st.session_state.messages.append({
                 "type": "bot",
-                "text": f"Found {len(gene_names)} genes: {', '.join(gene_names)}. Currently plotting {valid_genes[0]} (multi-gene visualization coming soon!)."
+                "text": f"Found {len(gene_names)} genes: {', '.join(gene_names)}. Currently plotting {valid_genes[0]}."
             })
 
     # Use first valid gene for now
@@ -475,49 +481,82 @@ if user_input:
 
     # --- STEP 5: Create visualization ---
 
-    # Multi-gene plotting: if multiple valid genes detected, try R bridge
-    if ENABLE_MULTI_GENE and len(valid_genes) > 1:
+    # Detect plot type using LLM
+    plot_type = detect_plot_type(resolved_input, len(valid_genes))
+
+    # Create visualization based on plot type and number of genes
+    st.session_state.current_plot_image = None
+    st.session_state.current_plot_type = plot_type
+
+    if len(valid_genes) > 1:
+        # Multiple genes
+        st.session_state.last_multi_genes = valid_genes
+        st.session_state.current_gene = valid_genes[0]
+
         try:
-            from modules.python.r_bridge import plot_multiple_genes as r_plot_multi
-            img_path = r_plot_multi(valid_genes, filtered_data['expr_matrix'], filtered_data['metadata'])
+            if plot_type == 'boxplot':
+                # User explicitly requested boxplot → use faceted boxplots
+                fig = plot_multiple_genes(valid_genes, filtered_data)
+                llm_details['code_executed'] = f"plot_multiple_genes({valid_genes})"
+            elif plot_type == 'barplot':
+                # User explicitly requested barplot → use faceted barplots
+                fig = plot_multiple_barplots(valid_genes, filtered_data)
+                llm_details['code_executed'] = f"plot_multiple_barplots({valid_genes})"
+            elif plot_type == 'violin':
+                # User explicitly requested violin → use faceted violin plots
+                fig = plot_multiple_violins(valid_genes, filtered_data)
+                llm_details['code_executed'] = f"plot_multiple_violins({valid_genes})"
+            else:
+                # Default to heatmap for multiple genes (or if explicitly requested)
+                fig = plot_genes_heatmap(valid_genes, filtered_data)
+                llm_details['code_executed'] = f"plot_genes_heatmap({valid_genes})"
 
-            # Store image path and context for display
-            st.session_state.current_plot_image = img_path
-            st.session_state.last_multi_genes = valid_genes
+            if fig is not None:
+                st.session_state.current_plot_figure = fig
+            else:
+                raise RuntimeError("Multi-gene plotting failed")
 
-            # Keep first gene as conversation context/backwards compatibility
-            st.session_state.current_gene = valid_genes[0]
-
-            llm_details['code_executed'] = f"plot_multiple_genes({valid_genes})"
         except Exception as e:
-            # Try Python fallback before failing
-            try:
-                from utils.python.plot_utils import plot_multiple_genes as py_plot_multi
-                fig = py_plot_multi(valid_genes, filtered_data)
-                if fig is not None:
-                    st.session_state.current_plot_image = None
-                    st.session_state.current_plot_figure = fig
-                    st.session_state.last_multi_genes = valid_genes
-                    st.session_state.current_gene = valid_genes[0]
-                    llm_details['code_executed'] = f"python_plot_multiple_genes({valid_genes})"
-                else:
-                    raise RuntimeError("Python fallback returned no figure")
-            except Exception as e2:
-                st.session_state.messages.append({
-                    "type": "error",
-                    "text": f"Multi-gene plotting failed: {str(e)}; Python fallback: {str(e2)}. Showing single-gene plot for {gene_name}."
-                })
-                st.session_state.current_plot_image = None
-                st.session_state.current_plot_figure = None
-                st.session_state.current_gene = gene_name
+            st.session_state.messages.append({
+                "type": "error",
+                "text": f"Multi-gene plotting failed: {str(e)}. Showing single-gene plot for {gene_name}."
+            })
+            # Fall back to single gene boxplot
+            plot_type = 'boxplot'
+            valid_genes = [gene_name]
+            fig = plot_gene_boxplot(gene_name, filtered_data)
+            st.session_state.current_plot_figure = fig
+            st.session_state.current_plot_type = plot_type
+            llm_details['code_executed'] = f"plot_gene_boxplot('{gene_name}', filtered_data)"
+
     else:
-        # Default single-gene plotting
-        st.session_state.current_plot_image = None
-        st.session_state.current_plot_figure = None
+        # Single gene - use detected plot type
         st.session_state.current_gene = gene_name
 
+        if plot_type == 'violin':
+            fig = plot_gene_violin(gene_name, filtered_data)
+            llm_details['code_executed'] = f"plot_gene_violin('{gene_name}', filtered_data)"
+        elif plot_type == 'barplot':
+            fig = plot_gene_barplot(gene_name, filtered_data)
+            llm_details['code_executed'] = f"plot_gene_barplot('{gene_name}', filtered_data)"
+        elif plot_type == 'heatmap':
+            fig = plot_genes_heatmap([gene_name], filtered_data)
+            llm_details['code_executed'] = f"plot_genes_heatmap(['{gene_name}'], filtered_data)"
+        else:  # boxplot (default)
+            fig = plot_gene_boxplot(gene_name, filtered_data)
+            llm_details['code_executed'] = f"plot_gene_boxplot('{gene_name}', filtered_data)"
+
+        st.session_state.current_plot_figure = fig
+
     # Build response message
-    response_text = f"Here's the expression plot for {gene_name}"
+    plot_type_name = st.session_state.get('current_plot_type', 'boxplot')
+    if len(valid_genes) > 1:
+        response_text = f"Here's a {plot_type_name} showing {', '.join(valid_genes[:3])}"
+        if len(valid_genes) > 3:
+            response_text += f" and {len(valid_genes) - 3} more genes"
+    else:
+        response_text = f"Here's a {plot_type_name} for {gene_name}"
+
     if filter_info and filter_info.get('has_filter'):
         response_text += f" (filtered: {filter_info.get('description', 'custom filter')})"
     response_text += " across all conditions."
@@ -568,13 +607,29 @@ else:
             st.caption("Currently showing multi-gene plot")
     else:
         gene_name = st.session_state.current_gene
+        plot_type = st.session_state.get('current_plot_type', 'boxplot')
 
-        # Create and display plot (Python fallback single-gene)
-        fig = plot_gene_boxplot(gene_name, expr_data)
+        # Create and display plot based on stored plot type
+        if plot_type == 'violin':
+            fig = plot_gene_violin(gene_name, expr_data)
+        elif plot_type == 'barplot':
+            fig = plot_gene_barplot(gene_name, expr_data)
+        elif plot_type == 'heatmap':
+            multi_genes = st.session_state.get('last_multi_genes')
+            if multi_genes and len(multi_genes) > 1:
+                fig = plot_genes_heatmap(multi_genes, expr_data)
+            else:
+                fig = plot_genes_heatmap([gene_name], expr_data)
+        else:  # boxplot (default)
+            fig = plot_gene_boxplot(gene_name, expr_data)
 
         if fig is not None:
             st.pyplot(fig)
-            st.caption(f"Currently showing: **{gene_name}**")
+            multi_genes = st.session_state.get('last_multi_genes')
+            if multi_genes and len(multi_genes) > 1:
+                st.caption(f"Currently showing: **{', '.join(multi_genes)}** ({plot_type})")
+            else:
+                st.caption(f"Currently showing: **{gene_name}** ({plot_type})")
         else:
             st.error(f"Failed to create plot for {gene_name}")
 

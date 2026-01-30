@@ -644,12 +644,6 @@ def handle_stats_query(user_input: str, expr_data: dict) -> dict:
 
     Returns:
         dict with 'results' and 'summary' keys
-
-    {
-        'expr_matrix': expr_matrix,
-        'expr_long': expr_long,
-        'metadata': metadata
-    }
     """
 
     # Step 1: Extract parameters
@@ -688,7 +682,7 @@ def handle_stats_query(user_input: str, expr_data: dict) -> dict:
 # Testing / Development
 # ============================================
 
-if __name__ == "__main__":
+# if __name__ == "__main__":
 
     #load test expression data
 
