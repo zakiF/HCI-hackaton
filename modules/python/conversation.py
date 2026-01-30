@@ -13,11 +13,12 @@ Examples:
 - User: "Compare it to BRCA1" → LLM knows "it" = TP53
 """
 
-import sys
 import os
+import re
+import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
-from utils.python.ollama_utils import call_ollama, call_ollama_json
+from utils.python.ollama_utils import call_ollama
 
 
 # ============================================
@@ -36,7 +37,6 @@ class ConversationManager:
         """Initialize conversation manager."""
         self.history = []  # List of (user_input, gene_name) tuples
         self.last_gene = None
-        self.last_plot_type = "boxplot"
 
     def add_turn(self, user_input: str, gene_name: str):
         """
@@ -84,7 +84,7 @@ class ConversationManager:
             return user_input  # No context resolution needed
 
         # STEP 2: Build context from history
-        context = self._build_context()
+        context = self._build_context(current_gene=current_gene)
 
         # STEP 3: Use LLM to resolve references
         resolved_query = self._resolve_with_llm(user_input, context)
@@ -106,19 +106,42 @@ class ConversationManager:
             False
         """
 
-        # Simple keyword detection (Miao can replace with LLM)
-        followup_keywords = [
-            'it', 'that', 'this',
-            'also', 'now', 'change',
-            'instead', 'different',
-            'same'
-        ]
-
         user_lower = user_input.lower()
 
-        return any(keyword in user_lower for keyword in followup_keywords)
+        # LLM-based classification (preferred)
+        llm_prompt = f"""
+You are classifying whether a user query is a follow-up that depends on prior context.
 
-    def _build_context(self) -> str:
+Examples of contextual keywords: it, that, this, those, them, one, same, also, previous, earlier, now, change to.
+
+Return ONLY "YES" or "NO".
+
+Query: "{user_input}"
+
+Answer:
+"""
+
+        llm_result = call_ollama(llm_prompt, temperature=0.1)
+        if llm_result:
+            llm_result = llm_result.strip().upper()
+            if llm_result in {"YES", "NO"}:
+                return llm_result == "YES"
+        # Fallback: Keyword-based detection
+        # Explicit pronoun or reference words as whole words
+        if re.search(r"\b(it|that|this|those|them|one|same|previous|earlier)\b", user_lower):
+            return True
+
+        # Follow-up intent phrases
+        if re.search(r"\b(now|also|instead|change|switch|another|different)\b", user_lower):
+            return True
+
+        # Plot-type change without naming a gene
+        if detect_plot_type_change(user_input) is not None:
+            return True
+
+        return False
+
+    def _build_context(self, current_gene: str = None) -> str:
         """
         Build context string from conversation history.
 
@@ -144,8 +167,9 @@ class ConversationManager:
             context_lines.append(f"- User asked: {user_q}")
             context_lines.append(f"  Gene shown: {gene}")
 
-        if self.last_gene:
-            context_lines.append(f"\nCurrently showing: {self.last_gene}")
+        active_gene = current_gene or self.last_gene
+        if active_gene:
+            context_lines.append(f"\nCurrently showing: {active_gene}")
 
         return "\n".join(context_lines)
 
@@ -165,14 +189,13 @@ class ConversationManager:
         """
 
         prompt = f"""
-You are helping resolve contextual references in a conversation about gene expression.
+You are resolving contextual references in a conversation.
 
 {context}
 
-The user just said: "{user_input}"
+User just said: "{user_input}"
 
-Rewrite the user's query by replacing any contextual references (like "it", "that")
-with the actual gene name from the context.
+Rewrite by replacing "it"/"that" with the actual gene name.
 
 Return ONLY the rewritten query, nothing else.
 
@@ -183,9 +206,9 @@ Rewritten query:
 
         if resolved:
             return resolved.strip()
-        else:
-            # Fallback: return original if LLM fails
-            return user_input
+
+        # Fallback: return original if LLM fails
+        return user_input
 
     def reset(self):
         """Clear conversation history."""

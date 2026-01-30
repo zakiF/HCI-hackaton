@@ -3,10 +3,11 @@ Plotting Utility Functions for Python
 Functions to create expression visualizations
 """
 
-import pandas as pd
-import matplotlib.pyplot as plt
-from typing import Dict, List, Optional
 import os
+from typing import Dict, List, Optional
+
+import matplotlib.pyplot as plt
+import pandas as pd
 
 
 def load_expression_data(data_dir: str = "data") -> Dict:
