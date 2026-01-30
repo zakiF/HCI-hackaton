@@ -141,6 +141,15 @@ Answer:
         if re.search(r"\b(now|also|instead|change|switch|another|different)\b", user_lower):
             return True
 
+        # Generic references that depend on context (only if we have history)
+        if len(self.history) > 0:
+            # Phrases like "the gene(s)", "the protein(s)", "the condition(s)" without specifying which one
+            if re.search(r"\b(the\s+genes?|the\s+proteins?|the\s+conditions?|the\s+samples?)\b", user_lower):
+                # Check if a specific gene is mentioned - if yes, not a follow-up
+                # Look for capital gene-like patterns (e.g., TP53, BRCA1)
+                if not re.search(r'\b[A-Z][A-Z0-9-]{2,}\b', user_input):
+                    return True
+
         # Plot-type change without naming a gene - but ONLY if we have conversation history
         # If no history, it's a new query, not a followup
         if len(self.history) > 0 and detect_plot_type_change(user_input) is not None:
@@ -238,36 +247,33 @@ Answer:
             Output: "Show TP53 as violin"
         """
 
-        prompt = f"""
-You are resolving contextual references in a conversation about gene expression analysis.
+        # Use simple pattern matching - extract genes from last query
+        resolved = user_input
 
-{context}
+        if len(self.history) > 0:
+            last_user_query = self.history[-1][0] if isinstance(self.history[-1], tuple) else self.history[-1]
 
-User just said: "{user_input}"
+            # Extract all gene-like patterns (uppercase 2+ chars with optional numbers/hyphens)
+            import re
+            genes_found = re.findall(r'\b[A-Z][A-Z0-9-]{2,}\b', last_user_query)
 
-TASK:
-Rewrite the query to be standalone and explicit:
-- Replace "it"/"that"/"this" with the actual gene name
-- If asking about statistical significance/tests, include both the gene AND the conditions being compared
-- If conditions are mentioned in context, include them in the rewritten query
+            # Filter out common words that aren't genes
+            exclude_words = {'PCA', 'RNA', 'DNA', 'ALL', 'AND', 'OR', 'NOT', 'AS', 'IN', 'ON', 'TO', 'FOR', 'THE'}
+            genes_found = [g for g in genes_found if g not in exclude_words]
 
-EXAMPLES:
-- "Is it significant?" + Context: "TP53, comparing tumor vs normal" → "Is TP53 expression significantly different between tumor and normal?"
-- "Show it as violin" + Context: "TP53" → "Show TP53 as violin plot"
-- "What about normal samples?" + Context: "TP53 in tumor" → "Show TP53 in normal samples"
+            if genes_found:
+                genes_str = ' and '.join(genes_found)
 
-Return ONLY the rewritten query, nothing else.
+                # Replace common patterns with the exact genes from context
+                resolved = re.sub(r'\bit\b', genes_str, resolved, flags=re.IGNORECASE)
+                resolved = re.sub(r'\bthat\b', genes_str, resolved, flags=re.IGNORECASE)
+                resolved = re.sub(r'\bthis\b', genes_str, resolved, flags=re.IGNORECASE)
+                resolved = re.sub(r'\bthem\b', genes_str, resolved, flags=re.IGNORECASE)
+                resolved = re.sub(r'\bthose\b', genes_str, resolved, flags=re.IGNORECASE)
+                resolved = re.sub(r'\bthe genes?\b', genes_str, resolved, flags=re.IGNORECASE)
+                resolved = re.sub(r'\bthe proteins?\b', genes_str, resolved, flags=re.IGNORECASE)
 
-Rewritten query:
-"""
-
-        resolved = call_ollama(prompt, temperature=0.1)
-
-        if resolved:
-            return resolved.strip()
-
-        # Fallback: return original if LLM fails
-        return user_input
+        return resolved.strip()
 
     def reset(self):
         """Clear conversation history."""

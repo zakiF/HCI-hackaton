@@ -180,7 +180,13 @@ if ENABLE_CONVERSATION and "conversation_mgr" not in st.session_state:
 # ============================================
 
 with st.sidebar:
-    st.title("⚙️ ChatSeq")
+    # Display logo
+    logo_path = os.path.join(os.path.dirname(__file__), '..', 'assets', 'logo.png')
+    if os.path.exists(logo_path):
+        st.image(logo_path, use_container_width=True)
+    else:
+        st.title("⚙️ ChatSeq")
+
     st.caption("Hackathon Version with Experimental Features")
 
     st.markdown("### About")
@@ -348,11 +354,23 @@ if user_input:
     # ROUTE 1: Gene Information Question (David's RAG)
     # ========================================
 
+    # Resolve context for RAG queries (handle "it", "that gene", etc.)
+    resolved_input_rag = user_input
+    if ENABLE_CONVERSATION and st.session_state.conversation_mgr:
+        try:
+            resolved_input_rag = st.session_state.conversation_mgr.resolve_context(
+                user_input,
+                st.session_state.get('current_gene', None)
+            )
+        except:
+            pass  # Use original input if resolution fails
+
     if ENABLE_RAG:
         try:
             if is_gene_question(user_input):
                 with st.spinner("Looking up gene information..."):
-                    response = answer_gene_question(user_input)
+                    # Use resolved input for RAG
+                    response = answer_gene_question(resolved_input_rag)
 
                 st.session_state.messages.append({
                     "type": "bot",
@@ -371,11 +389,23 @@ if user_input:
     # ROUTE 2: Statistical Question (Tayler's Stats)
     # ========================================
 
+    # Resolve context for stats queries (handle "it", "them", etc.)
+    resolved_input_stats = user_input
+    if ENABLE_CONVERSATION and st.session_state.conversation_mgr:
+        try:
+            resolved_input_stats = st.session_state.conversation_mgr.resolve_context(
+                user_input,
+                st.session_state.get('current_gene', None)
+            )
+        except:
+            pass  # Use original input if resolution fails
+
     if ENABLE_STATS:
         try:
             if is_stats_query(user_input):
                 with st.spinner("Running statistical analysis..."):
-                    result = handle_stats_query(user_input, expr_data)
+                    # Use resolved input for stats
+                    result = handle_stats_query(resolved_input_stats, expr_data)
 
                 # Display results
                 st.session_state.messages.append({
@@ -573,7 +603,7 @@ if user_input:
     # Update conversation context (Miao)
     if ENABLE_CONVERSATION and st.session_state.conversation_mgr:
         try:
-            st.session_state.conversation_mgr.add_turn(user_input, gene_name, filter_info)
+            st.session_state.conversation_mgr.add_turn(user_input, gene_name)
         except:
             pass
 
