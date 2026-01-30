@@ -15,7 +15,7 @@ import streamlit as st
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from utils.python.llm_utils import extract_gene_name, extract_gene_name_with_details, check_ollama_status
-from utils.python.plot_utils import load_expression_data, plot_gene_boxplot, get_available_genes
+from utils.python.plot_utils import load_expression_data, plot_gene_boxplot, get_available_genes, create_pca_plot
 from modules.python.conversation import ConversationManager
 
 
@@ -97,7 +97,8 @@ if "last_llm_details" not in st.session_state:
     st.session_state.last_llm_details = None
 if "conversation_mgr" not in st.session_state:
     st.session_state.conversation_mgr = ConversationManager()
-
+if "show_pca" not in st.session_state:
+    st.session_state.show_pca = False
 
 # ============================================
 # Sidebar
@@ -136,6 +137,28 @@ with st.sidebar:
 
     st.divider()
 
+    # PCA button
+    st.markdown("### Quick Actions")
+    if st.button("Run PCA", use_container_width=True, type="primary"):
+        st.session_state.show_pca = True
+        st.session_state.current_gene = None
+        st.session_state.messages.append({
+            "type": "user",
+            "text": "Run PCA on this dataset"
+        })
+        st.session_state.messages.append({
+            "type": "bot",
+            "text": "I've created a PCA visualization using all genes (log2-transformed)."
+        })
+        st.rerun()
+
+    st.divider()
+
+    # Quick plot
+    st.markdown("### Quick Gene Plot")  # Change "Quick Plot" to "Quick Gene Plot"
+
+    st.divider()
+
     # Quick plot
     st.markdown("### Quick Plot")
     available_genes = get_available_genes(expr_data)
@@ -145,9 +168,10 @@ with st.sidebar:
         index=0
     )
 
-    if st.button("Plot", use_container_width=True, type="primary"):
+    if st.button("Plot", use_container_width=True): # Changed label, removed type
         if quick_gene and quick_gene != "":
             st.session_state.current_gene = quick_gene
+            st.session_state.show.pca = False
             st.session_state.messages.append({
                 "type": "bot",
                 "text": f"Plotted {quick_gene} from quick select."
@@ -164,6 +188,7 @@ with st.sidebar:
     if st.button("🗑️ Clear Chat", use_container_width=True):
         st.session_state.messages = []
         st.session_state.current_gene = None
+        st.session_state.show_pca = False
         st.session_state.conversation_mgr.reset()
         st.rerun()
 
@@ -218,6 +243,9 @@ with chat_container:
 # Chat input
 user_input = st.chat_input("Ask about a gene... (e.g., 'Show me TP53 expression')")
 
+# Complete user_input section with proper indentation
+# Replace the entire section starting from "if user_input:" in chatbot_basic.py
+
 if user_input:
     # Add user message
     st.session_state.messages.append({
@@ -226,69 +254,104 @@ if user_input:
     })
 
     user_lower = user_input.lower()
-    if any(kw in user_lower for kw in ["compare", "versus", " vs ", "vs."]):
+    
+    # Check if PCA request
+    if 'pca' in user_lower:
+        st.session_state.show_pca = True
+        st.session_state.current_gene = None
+        st.session_state.messages.append({
+            "type": "bot",
+            "text": "I've created a PCA visualization using all genes (log2-transformed). Each point represents a sample, colored by condition."
+        })
+        st.rerun()
+    
+    # Check for multi-gene comparison
+    elif any(kw in user_lower for kw in ["compare", "versus", " vs ", "vs."]):
         st.session_state.messages.append({
             "type": "error",
             "text": "Multi-gene comparison isn't supported in this single-gene chatbot yet."
         })
         st.rerun()
-
-    # Resolve conversation context before extraction
-    resolved_input = st.session_state.conversation_mgr.resolve_context(
-        user_input,
-        current_gene=st.session_state.current_gene
-    )
-
-    # Extract gene name using LLM (with details)
-    with st.spinner("Processing your question..."):
-        llm_details = extract_gene_name_with_details(resolved_input)
-
-    gene_name = llm_details['gene_name']
-
-    if gene_name is None:
-        st.session_state.messages.append({
-            "type": "error",
-            "text": "Sorry, I couldn't extract a gene name from your question. Please try again with a specific gene name (e.g., 'Show me TP53')."
-        })
-        st.session_state.last_llm_details = llm_details  # Store for debugging
+    
+    # Handle gene query
     else:
-        # Check if gene exists
-        available_genes = get_available_genes(expr_data)
+        # Resolve conversation context before extraction
+        resolved_input = st.session_state.conversation_mgr.resolve_context(
+            user_input,
+            current_gene=st.session_state.current_gene
+        )
 
-        if gene_name not in available_genes:
+        # Extract gene name using LLM (with details)
+        with st.spinner("Processing your question..."):
+            llm_details = extract_gene_name_with_details(resolved_input)
+
+        gene_name = llm_details['gene_name']
+
+        if gene_name is None:
             st.session_state.messages.append({
                 "type": "error",
-                "text": f"Gene '{gene_name}' not found in dataset. Please check the spelling or try a different gene."
+                "text": "Sorry, I couldn't extract a gene name from your question. Please try again with a specific gene name (e.g., 'Show me TP53')."
             })
-            st.session_state.last_llm_details = llm_details
+            st.session_state.last_llm_details = llm_details  # Store for debugging
         else:
-            # Success!
-            st.session_state.current_gene = gene_name
-            st.session_state.messages.append({
-                "type": "bot",
-                "text": f"Here's the expression plot for {gene_name} across all conditions."
-            })
-            # Store LLM details with the executed code
-            llm_details['code_executed'] = f"plot_gene_boxplot('{gene_name}', expr_data)"
-            st.session_state.last_llm_details = llm_details
-            st.session_state.conversation_mgr.add_turn(
-                user_input,
-                gene_name
-            )
+            # Check if gene exists
+            available_genes = get_available_genes(expr_data)
 
-    st.rerun()
+            if gene_name not in available_genes:
+                st.session_state.messages.append({
+                    "type": "error",
+                    "text": f"Gene '{gene_name}' not found in dataset. Please check the spelling or try a different gene."
+                })
+                st.session_state.last_llm_details = llm_details
+            else:
+                # Success!
+                st.session_state.current_gene = gene_name
+                st.session_state.show_pca = False
+                st.session_state.messages.append({
+                    "type": "bot",
+                    "text": f"Here's the expression plot for {gene_name} across all conditions."
+                })
+                # Store LLM details with the executed code
+                llm_details['code_executed'] = f"plot_gene_boxplot('{gene_name}', expr_data)"
+                st.session_state.last_llm_details = llm_details
+                st.session_state.conversation_mgr.add_turn(
+                    user_input,
+                    gene_name
+                )
+
+        st.rerun()
 
 st.divider()
 
 # Visualization section
 st.header("Visualization")
 
-if st.session_state.current_gene is None:
-    st.info("No plot yet. Ask about a gene to see its expression!")
+if st.session_state.show_pca:
+    with st.spinner("Creating PCA visualization..."):
+        try:
+            pca_fig = create_pca_plot(expr_data)
+            st.plotly_chart(pca_fig, use_container_width=True)
+            
+            with st.expander("How to interpret this PCA plot"):
+                st.markdown("""
+                **PCA (Principal Component Analysis):**
+                
+                - Each point represents one sample
+                - Colors: Blue (Normal), Red (Tumor), Orange (Metastatic)
+                - PC1 (x-axis): Largest source of variation
+                - PC2 (y-axis): Second-largest source of variation
+                - Samples close together have similar gene expression
+                
+                Data is log2-transformed and standardized before PCA.
+                """)
+        except Exception as e:
+            st.error(f"Error creating PCA plot: {str(e)}")
+
+elif st.session_state.current_gene is None:
+    st.info("No plot yet. Ask about a gene or request PCA!")
+
 else:
     gene_name = st.session_state.current_gene
-
-    # Create and display plot
     fig = plot_gene_boxplot(gene_name, expr_data)
 
     if fig is not None:

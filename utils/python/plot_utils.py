@@ -9,6 +9,11 @@ from typing import Dict, List, Optional
 import matplotlib.pyplot as plt
 import pandas as pd
 
+import numpy as np
+import plotly.express as px
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
+
 
 def load_expression_data(data_dir: str = "data") -> Dict:
     """
@@ -273,3 +278,93 @@ def search_genes(pattern: str, expr_data: Dict, max_results: int = 10) -> List[s
     all_genes = get_available_genes(expr_data)
     matches = [g for g in all_genes if pattern.upper() in g.upper()]
     return matches[:max_results]
+
+#PCA function for ChatSeq - log/scaling normalization for TPM data
+
+def create_pca_plot(expr_data):
+    """
+    Create PCA visualization using all genes from already-loaded data
+    
+    For TPM-normalized data:
+    Standardize (for PCA)
+    
+    Parameters:
+    -----------
+    expr_data : dict
+        Expression data dictionary from load_expression_data()
+        Should contain 'normalized' (TPM values) and 'metadata' keys
+        
+    Returns:
+    --------
+    plotly.graph_objects.Figure
+        Interactive PCA plot
+    """
+    # Get data from the dict that's already loaded
+    expr_df = expr_data['expr_matrix']  # genes x samples (TPM values)
+    metadata_df = expr_data['metadata']
+    
+    # Transpose to samples x genes
+    expr_t = expr_df.T
+    
+    # Standardize the data (mean=0, std=1 for each gene)
+    scaler = StandardScaler()
+    expr_scaled = scaler.fit_transform(expr_t)
+    
+    # Run PCA
+    pca = PCA(n_components=2)
+    pca_coords = pca.fit_transform(expr_scaled)
+    
+    # Create results dataframe
+    pca_df = pd.DataFrame({
+        'PC1': pca_coords[:, 0],
+        'PC2': pca_coords[:, 1],
+        'Sample': expr_t.index
+    })
+    
+    # Add metadata (match by Sample/Run)
+    metadata_indexed = metadata_df.set_index('Run')
+    pca_df['group'] = metadata_indexed.loc[pca_df['Sample'], 'group'].values
+    
+    # Get variance explained
+    var1 = pca.explained_variance_ratio_[0] * 100
+    var2 = pca.explained_variance_ratio_[1] * 100
+    
+    # Color mapping
+    color_map = {
+        'g1.normal': '#2E86AB',   # Blue
+        'g2.tumor': '#E63946',    # Red
+        'g3.mets': '#F77F00'      # Orange
+    }
+    
+    # Create plot
+    fig = px.scatter(
+        pca_df,
+        x='PC1',
+        y='PC2',
+        color='group',
+        hover_data=['Sample'],
+        title=f'PCA of Gene Expression Data (All {expr_df.shape[0]} genes, log2-transformed)',
+        labels={
+            'PC1': f'PC1 ({var1:.1f}% variance)',
+            'PC2': f'PC2 ({var2:.1f}% variance)'
+        },
+        color_discrete_map=color_map
+    )
+    
+    fig.update_traces(marker=dict(size=10, line=dict(width=1, color='white')))
+    
+    fig.update_layout(
+        width=800,
+        height=600,
+        template='plotly_white',
+        font=dict(size=12),
+        legend=dict(
+            title='Sample Group',
+            yanchor="top",
+            y=0.99,
+            xanchor="right",
+            x=0.99
+        )
+    )
+    
+    return fig

@@ -7,7 +7,7 @@ import requests
 from typing import Optional
 
 
-# Configuration
+# Configuration 
 OLLAMA_URL = "http://localhost:11434"
 DEFAULT_MODEL = "llama3.2"
 
