@@ -17,6 +17,8 @@ Examples:
 import sys
 import os
 from datetime import datetime
+from typing import Optional, List
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from utils.python.ollama_utils import call_ollama, ask_llm_to_classify, ask_llm_to_extract
@@ -155,7 +157,7 @@ def fetch_from_mygene_api(gene_name: str) -> dict:
 # RAG: Generate Natural Language Answer
 # ============================================
 
-def generate_gene_explanations(gene_names: list[str], gene_infos: list[dict], user_question: str) -> str:
+def generate_gene_explanations(gene_names: List[str], gene_infos: List[dict], user_question: str) -> str:
     """
     Use LLM to generate natural language explanations for one or more genes in a single call.
 
@@ -258,7 +260,7 @@ def answer_gene_question(user_input: str) -> str:
     return generate_gene_explanations(genes, gene_infos, user_input)
 
 
-def extract_genes_from_question(user_input: str) -> list[str]:
+def extract_genes_from_question(user_input: str) -> List[str]:
     """
     Extract one or more gene names from a question.
 
@@ -478,56 +480,56 @@ def run_batch_tests(
 # Testing / Development
 # ============================================
 
-if __name__ == "__main__":
-    """
-    Test this module independently.
+# if __name__ == "__main__":
+#     """
+#     Test this module independently.
 
-    Run: python modules/python/llm_rag.py
-    """
+#     Run: python modules/python/llm_rag.py
+#     """
 
-    print("=== Testing RAG Module ===\n")
+#     print("=== Testing RAG Module ===\n")
 
-    # Test intent detection
-    print("1. Intent Detection:")
-    test_queries = [
-        "What does TP53 do?",
-        "Show me TP53",
-        "Tell me about BRCA1",
-        "Plot EGFR expression"
-    ]
-    for query in test_queries:
-        is_info_q = is_gene_question(query)
-        print(f"   '{query}' → Info question: {is_info_q}")
-    print()
+#     # Test intent detection
+#     print("1. Intent Detection:")
+#     test_queries = [
+#         "What does TP53 do?",
+#         "Show me TP53",
+#         "Tell me about BRCA1",
+#         "Plot EGFR expression"
+#     ]
+#     for query in test_queries:
+#         is_info_q = is_gene_question(query)
+#         print(f"   '{query}' → Info question: {is_info_q}")
+#     print()
 
-    # Test retrieval
-    print("2. Knowledge Retrieval:")
-    gene = "TP53"
-    info = fetch_from_mygene_api(gene)
-    print(f"   Gene: {gene}")
-    print(f"   Found: {info['found']}")
-    if info['found']:
-        print(f"   Description: {info['description'][:100]}...")
-    print()
+#     # Test retrieval
+#     print("2. Knowledge Retrieval:")
+#     gene = "TP53"
+#     info = fetch_from_mygene_api(gene)
+#     print(f"   Gene: {gene}")
+#     print(f"   Found: {info['found']}")
+#     if info['found']:
+#         print(f"   Description: {info['description'][:100]}...")
+#     print()
 
-    # Test full RAG pipeline
-    print("3. Full RAG Pipeline:")
-    question = "What does TP53 do?"
-    answer = answer_gene_question(question)
-    print(f"   Question: {question}")
-    print(f"   Answer: {answer}")
-    print()
+#     # Test full RAG pipeline
+#     print("3. Full RAG Pipeline:")
+#     question = "What does TP53 do?"
+#     answer = answer_gene_question(question)
+#     print(f"   Question: {question}")
+#     print(f"   Answer: {answer}")
+#     print()
 
-    # Batch tests from CSV (adjust max_rows to cap runtime)
-    print("4. Batch test suite from CSV:")
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_path = os.path.join(TEST_OUTPUT_DIR, f"gene_query_results_{timestamp}.csv")
-    run_batch_tests(
-        TEST_DATA_PATH,
-        max_rows=None,
-        output_path=output_path,
-        run_judge=True,
-        manual_review_count=5,
-    )
+#     # Batch tests from CSV (adjust max_rows to cap runtime)
+#     print("4. Batch test suite from CSV:")
+#     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+#     output_path = os.path.join(TEST_OUTPUT_DIR, f"gene_query_results_{timestamp}.csv")
+#     run_batch_tests(
+#         TEST_DATA_PATH,
+#         max_rows=None,
+#         output_path=output_path,
+#         run_judge=True,
+#         manual_review_count=5,
+#     )
 
     

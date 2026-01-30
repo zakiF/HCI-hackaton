@@ -204,6 +204,78 @@ def extract_gene_name_with_details(user_question: str) -> dict:
     return result
 
 
+def detect_plot_type(user_question: str, num_genes: int = 1) -> str:
+    """
+    Detect which type of plot the user wants.
+
+    Parameters
+    ----------
+    user_question : str
+        User's query
+    num_genes : int
+        Number of genes to plot (helps determine default)
+
+    Returns
+    -------
+    str
+        Plot type: "boxplot", "violin", "barplot", or "heatmap"
+
+    Examples
+    --------
+    >>> detect_plot_type("Show me TP53 as violin plot", 1)
+    "violin"
+    >>> detect_plot_type("Compare TP53, BRCA1, EGFR", 3)
+    "heatmap"
+    """
+    # First check for explicit keywords
+    query_lower = user_question.lower()
+
+    if 'violin' in query_lower:
+        return 'violin'
+    if 'heatmap' in query_lower or 'heat map' in query_lower:
+        return 'heatmap'
+    if 'barplot' in query_lower or 'bar plot' in query_lower or 'bar chart' in query_lower:
+        return 'barplot'
+    if 'boxplot' in query_lower or 'box plot' in query_lower:
+        return 'boxplot'
+
+    # Use LLM for ambiguous cases
+    prompt = (
+        f"What type of plot does the user want?\n"
+        f"Context: {num_genes} gene(s) to plot.\n\n"
+        f"Choose ONE from: boxplot, barplot, violin, heatmap\n"
+        f"Guidelines:\n"
+        f"- If 1 gene: boxplot, barplot, or violin\n"
+        f"- If 2+ genes: heatmap (or faceted boxplot/barplot/violin)\n"
+        f"- If not specified, use default based on number of genes\n\n"
+        f"Return ONLY the plot type name (boxplot, barplot, violin, or heatmap).\n\n"
+        f"Query: {user_question}\n\n"
+        f"Plot type:"
+    )
+
+    response = ask_ollama(prompt, temperature=0.1)
+
+    if response is None:
+        # Fallback based on number of genes
+        if num_genes == 1:
+            return 'boxplot'
+        else:
+            return 'heatmap'
+
+    # Clean response
+    plot_type = response.lower().strip()
+
+    # Validate
+    valid_types = ['boxplot', 'barplot', 'violin', 'heatmap']
+
+    for valid in valid_types:
+        if valid in plot_type:
+            return valid
+
+    # Default fallback
+    return 'boxplot' if num_genes == 1 else 'heatmap'
+
+
 def check_ollama_status() -> bool:
     """
     Check if Ollama is running and accessible.
