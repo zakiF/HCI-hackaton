@@ -344,8 +344,8 @@ Answer: {answer}
 
 def run_batch_tests(
     test_path: str,
-    max_rows: int | None = None,
-    output_path: str | None = None,
+    max_rows: Optional[int] = None,
+    output_path: Optional[str] = None,
     run_judge: bool = True,
     manual_review_count: int = 3,
 ) -> None:

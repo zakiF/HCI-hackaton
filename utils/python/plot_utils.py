@@ -111,8 +111,15 @@ def plot_gene_boxplot(gene_name: str, expr_data: Dict) -> Optional[plt.Figure]:
         'Metastatic': '#8DA0CB'
     }
 
+    # Get conditions present in the data (preserves order)
+    all_conditions = ['Normal', 'Primary Tumor', 'Metastatic']
+    conditions = [c for c in all_conditions if c in gene_data['condition'].values]
+
+    # If no conditions found, fall back to all conditions
+    if not conditions:
+        conditions = all_conditions
+
     # Create boxplot
-    conditions = ['Normal', 'Primary Tumor', 'Metastatic']
     data_by_condition = [
         gene_data[gene_data['condition'] == cond]['expression'].values
         for cond in conditions
@@ -155,7 +162,7 @@ def plot_gene_boxplot(gene_name: str, expr_data: Dict) -> Optional[plt.Figure]:
     # Add subtitle
     fig.text(
         0.5, 0.92,
-        f"{len(gene_data)} samples across 3 conditions",
+        f"{len(gene_data)} samples across {len(conditions)} condition(s)",
         ha='center',
         fontsize=10,
         color='gray'
@@ -200,9 +207,16 @@ def plot_gene_violin(gene_name: str, expr_data: Dict) -> Optional[plt.Figure]:
         'Metastatic': '#8DA0CB'
     }
 
+    # Get conditions present in the data (preserves order)
+    all_conditions = ['Normal', 'Primary Tumor', 'Metastatic']
+    conditions = [c for c in all_conditions if c in gene_data['condition'].values]
+
+    # If no conditions found, fall back to all conditions
+    if not conditions:
+        conditions = all_conditions
+
     # Prepare data for violin plot
-    conditions = ['Normal', 'Primary Tumor', 'Metastatic']
-    positions = [1, 2, 3]
+    positions = list(range(1, len(conditions) + 1))
 
     # Create violin plots
     parts = ax.violinplot(
@@ -245,7 +259,7 @@ def plot_gene_violin(gene_name: str, expr_data: Dict) -> Optional[plt.Figure]:
     # Add subtitle
     fig.text(
         0.5, 0.92,
-        f"{len(gene_data)} samples across 3 conditions",
+        f"{len(gene_data)} samples across {len(conditions)} condition(s)",
         ha='center',
         fontsize=10,
         color='gray'
@@ -391,7 +405,13 @@ def plot_gene_barplot(gene_name: str, expr_data: Dict) -> Optional[plt.Figure]:
         'Metastatic': '#8DA0CB'
     }
 
-    conditions = ['Normal', 'Primary Tumor', 'Metastatic']
+    # Get conditions present in the data (preserves order)
+    all_conditions = ['Normal', 'Primary Tumor', 'Metastatic']
+    conditions = [c for c in all_conditions if c in gene_data['condition'].values]
+
+    # If no conditions found, fall back to all conditions
+    if not conditions:
+        conditions = all_conditions
 
     # Calculate mean and SEM for each condition
     means = []
