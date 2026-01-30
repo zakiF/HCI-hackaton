@@ -17,7 +17,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from utils.python.llm_utils import extract_gene_name, extract_gene_name_with_details, check_ollama_status
-from utils.python.plot_utils import load_expression_data, plot_gene_boxplot, get_available_genes
+from utils.python.plot_utils import load_expression_data, plot_gene_boxplot, get_available_genes, create_pca_plot
 
 
 # ============================================
@@ -41,6 +41,7 @@ else:
     ENABLE_CONVERSATION = True   # Miao: Conversational context/follow-ups
     ENABLE_STATS = True          # Tayler: Statistical testing
     ENABLE_RAG = True            # David: Gene information RAG
+    ENABLE_PCA = True            # Javier: PCA Visualization
 
 
 # ============================================
@@ -89,6 +90,9 @@ if ENABLE_RAG:
         print(f"✗ RAG feature disabled: {e}")
         ENABLE_RAG = False
 
+# PCA visualization flag (Javier's feature)
+if "show_pca" not in st.session_state:
+    st.session_state.show_pca = False
 
 # ============================================
 # Page Configuration
@@ -210,6 +214,10 @@ with st.sidebar:
         st.markdown("**Gene Info (David):**")
         st.markdown("- What does TP53 do?")
 
+    if ENABLE_PCA:
+        st.markdown("**PCA (Javier):**")
+        st.markdown("- Run PCA on this dataset")
+
     st.divider()
 
     # Dataset info
@@ -227,7 +235,8 @@ with st.sidebar:
         "Filters": ENABLE_FILTERS,
         "Conversation": ENABLE_CONVERSATION,
         "Statistics": ENABLE_STATS,
-        "Gene Info (RAG)": ENABLE_RAG
+        "Gene Info (RAG)": ENABLE_RAG,
+        "PCA": ENABLE_PCA
     }
 
     for feature_name, enabled in features.items():
@@ -263,6 +272,24 @@ with st.sidebar:
             st.session_state.messages.append({
                 "type": "bot",
                 "text": f"Plotted {quick_gene} from quick select."
+            })
+            st.rerun()
+
+    st.divider()
+
+    # PCA Quick Action (Javier's feature)
+    if ENABLE_PCA:
+        st.markdown("### Quick Actions")
+        if st.button("Run PCA", use_container_width=True, type="primary"):
+            st.session_state.show_pca = True
+            st.session_state.current_gene = None
+            st.session_state.messages.append({
+                "type": "user",
+                "text": "Run PCA on this dataset"
+            })
+            st.session_state.messages.append({
+                "type": "bot",
+                "text": "I've created a PCA visualization using all genes."
             })
             st.rerun()
 
@@ -392,6 +419,19 @@ if user_input:
             # Continue to plotting route
 
     # ========================================
+    # ROUTE 2.5: PCA Request (Javier's PCA Feature)
+    # ========================================
+    
+    if ENABLE_PCA and 'pca' in user_input.lower():
+        st.session_state.show_pca = True
+        st.session_state.current_gene = None
+        st.session_state.messages.append({
+            "type": "bot",
+            "text": "I've created a PCA visualization using all genes."
+        })
+        st.rerun()
+
+    # ========================================
     # ROUTE 3: Visualization/Plotting Request
     # ========================================
 
@@ -515,6 +555,7 @@ if user_input:
         st.session_state.current_plot_image = None
         st.session_state.current_plot_figure = None
         st.session_state.current_gene = gene_name
+        st.session_state.show_pca = False 
 
     # Build response message
     response_text = f"Here's the expression plot for {gene_name}"
@@ -548,8 +589,30 @@ if user_input:
 st.divider()
 st.header("Visualization")
 
-if st.session_state.current_gene is None and not st.session_state.get('current_plot_image'):
-    st.info("No plot yet. Ask about a gene to see its expression!")
+if st.session_state.get('show_pca', False):
+    # Show PCA plot (Javier's feature)
+    with st.spinner("Creating PCA visualization..."):
+        try:
+            pca_fig = create_pca_plot(expr_data)
+            st.plotly_chart(pca_fig, use_container_width=True)
+            
+            with st.expander("How to interpret this PCA plot"):
+                st.markdown("""
+                **PCA (Principal Component Analysis):**
+                
+                - Each point represents one sample
+                - Colors: Blue (Normal), Red (Tumor), Orange (Metastatic)
+                - PC1 (x-axis): Largest source of variation
+                - PC2 (y-axis): Second-largest source of variation
+                - Samples close together have similar gene expression
+                
+                Data is already log2-transformed and standardized before PCA.
+                """)
+        except Exception as e:
+            st.error(f"Error creating PCA plot: {str(e)}")
+
+elif st.session_state.current_gene is None and not st.session_state.get('current_plot_image'):
+    st.info("No plot yet. Ask about a gene or run PCA!")
 else:
     # If we have an image saved by the R bridge for multi-gene plot, show it
     if st.session_state.get('current_plot_image'):
